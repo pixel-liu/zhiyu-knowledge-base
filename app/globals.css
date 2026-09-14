@@ -1,0 +1,240 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+:root {
+  height: 100%;
+}
+
+:root {
+  /* Notion's exact default font stack (system fonts, no web-font download). */
+  --font-notion: ui-sans-serif, -apple-system, "system-ui",
+    "Segoe UI Variable Display", "Segoe UI", Helvetica, "Apple Color Emoji",
+    "Noto Sans Arabic", "Noto Sans Hebrew", Arial, sans-serif,
+    "Segoe UI Emoji", "Segoe UI Symbol";
+}
+
+body {
+  font-family: var(--font-notion);
+  margin: 0;
+}
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 3.9%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 3.9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 3.9%;
+
+    --primary: 0 0% 9%;
+    --primary-foreground: 0 0% 98%;
+
+    --secondary: 0 0% 96.1%;
+    --secondary-foreground: 0 0% 9%;
+
+    --muted: 0 0% 96.1%;
+    --muted-foreground: 0 0% 45.1%;
+
+    --accent: 0 0% 96.1%;
+    --accent-foreground: 0 0% 9%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 0 0% 89.8%;
+    --input: 0 0% 89.8%;
+    --ring: 0 0% 3.9%;
+
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 0 0% 3.9%;
+    --foreground: 0 0% 98%;
+
+    --card: 0 0% 3.9%;
+    --card-foreground: 0 0% 98%;
+
+    --popover: 0 0% 3.9%;
+    --popover-foreground: 0 0% 98%;
+
+    --primary: 0 0% 98%;
+    --primary-foreground: 0 0% 9%;
+
+    --secondary: 0 0% 14.9%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 0 0% 14.9%;
+    --muted-foreground: 0 0% 63.9%;
+
+    --accent: 0 0% 14.9%;
+    --accent-foreground: 0 0% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 0 0% 14.9%;
+    --input: 0 0% 14.9%;
+    --ring: 0 0% 83.1%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/*
+ * Editor (BlockNote) typography.
+ * BlockNote ships line-height:1.5 (Notion's value) with 3px block padding, which
+ * reads a touch cramped for long-form notes. These selectors are more specific
+ * than BlockNote's defaults, so they win without !important regardless of CSS
+ * import order. Roomier line-height + a bit more inter-block spacing.
+ */
+/* Use Notion's system font stack in the editor too (overrides BlockNote's Inter). */
+.bn-container .bn-default-styles,
+.bn-editor.bn-default-styles,
+.bn-editor .bn-default-styles {
+  font-family: var(--font-notion);
+}
+
+.bn-editor .bn-block-outer {
+  line-height: 1.7;
+}
+
+.bn-editor .bn-block-content {
+  padding-block: 2px;
+}
+
+/*
+ * Headings: tighter line-height (they rarely wrap) + Notion-like section
+ * spacing above, scaled by level (level 1 has no data-level attribute).
+ */
+.bn-editor .bn-block-content[data-content-type="heading"] {
+  line-height: 1.3;
+  padding-top: 1.75rem;
+}
+.bn-editor .bn-block-content[data-content-type="heading"][data-level="2"] {
+  padding-top: 1.4rem;
+}
+.bn-editor .bn-block-content[data-content-type="heading"][data-level="3"] {
+  padding-top: 1rem;
+}
+
+/* No extra gap if a heading is the very first block in the note. */
+.bn-editor > div > .bn-block-group > .bn-block-outer:first-child
+  .bn-block-content[data-content-type="heading"] {
+  padding-top: 2px;
+}
+
+/* 知屿：给个人知识管理留出安静、可长期使用的工作面。 */
+.zhiyu-shell {
+  min-height: 100vh;
+  color: #182033;
+  background: #f4f4ef;
+}
+
+.zhiyu-sidebar {
+  width: 276px;
+  min-height: 100vh;
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 10;
+  color: #eaf0ff;
+  background: #17233d;
+  padding: 26px 16px 18px;
+  display: flex;
+  flex-direction: column;
+}
+
+.zhiyu-brand { display: flex; align-items: center; gap: 10px; padding: 0 8px 26px; }
+.zhiyu-mark { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 10px; color: #17233d; background: #b9f2c7; font-weight: 800; }
+.zhiyu-brand strong { font-size: 1rem; letter-spacing: .03em; }
+.zhiyu-brand span { display: block; margin-top: 2px; color: #9cabc7; font-size: .72rem; }
+.zhiyu-create { width: 100%; border: 0; border-radius: 10px; background: #b9f2c7; color: #122238; padding: 11px 12px; font: inherit; font-weight: 700; cursor: pointer; display: flex; gap: 8px; align-items: center; justify-content: center; }
+.zhiyu-search { display: flex; align-items: center; gap: 8px; color: #c3cee4; margin: 14px 4px 16px; font-size: .83rem; }
+.zhiyu-search kbd { margin-left: auto; border: 1px solid #40506e; border-radius: 4px; padding: 1px 5px; color: #9cabc7; font-size: .67rem; }
+.zhiyu-space-label { color: #8291b0; font-size: .7rem; letter-spacing: .09em; padding: 0 9px 8px; }
+.zhiyu-tree { overflow-y: auto; display: grid; gap: 2px; }
+.zhiyu-tree-item { appearance: none; border: 0; width: 100%; padding: 9px 9px; border-radius: 8px; background: transparent; color: #cbd5e8; text-align: left; cursor: pointer; display: flex; align-items: center; gap: 8px; font: inherit; font-size: .88rem; }
+.zhiyu-tree-item:hover { background: #233455; }
+.zhiyu-tree-item.active { background: #2a3d63; color: #fff; }
+.zhiyu-tree-item small { margin-left: auto; color: #93a3c3; font-size: .7rem; }
+.zhiyu-sidebar-footer { border-top: 1px solid #2b3b5a; margin-top: auto; padding: 15px 8px 0; color: #99a8c5; font-size: .74rem; line-height: 1.5; }
+.zhiyu-sidebar-footer b { color: #b9f2c7; font-weight: 600; }
+
+.zhiyu-main { margin-left: 276px; min-height: 100vh; }
+.zhiyu-topbar { height: 72px; border-bottom: 1px solid #dedfd8; background: rgba(244,244,239,.92); display: flex; align-items: center; gap: 16px; padding: 0 38px; position: sticky; top: 0; z-index: 5; backdrop-filter: blur(12px); }
+.zhiyu-crumb { color: #7b8190; font-size: .86rem; }
+.zhiyu-crumb strong { color: #26314a; font-weight: 650; }
+.zhiyu-top-actions { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+.zhiyu-live { color: #43795c; font-size: .78rem; display: flex; align-items: center; gap: 6px; }
+.zhiyu-live i { width: 7px; height: 7px; background: #5dac78; border-radius: 99px; display: inline-block; }
+.zhiyu-export { border: 1px solid #ced2cc; background: #fff; color: #34405b; border-radius: 8px; padding: 8px 11px; font: inherit; font-size: .78rem; cursor: pointer; }
+
+.zhiyu-workspace { max-width: 1260px; margin: 0 auto; padding: 40px 38px 48px; }
+.zhiyu-overview { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 30px; }
+.zhiyu-eyebrow { color: #5e8c70; font-size: .75rem; letter-spacing: .08em; font-weight: 750; }
+.zhiyu-overview h1 { font-family: Georgia, "Noto Serif SC", serif; letter-spacing: -.04em; font-size: clamp(2.1rem, 4vw, 3.5rem); margin: 7px 0 0; line-height: 1.05; color: #17233d; }
+.zhiyu-overview p { margin: 0; max-width: 355px; color: #707789; font-size: .9rem; line-height: 1.65; }
+.zhiyu-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 26px; }
+.zhiyu-stat { border: 1px solid #dedfd8; border-radius: 13px; background: #fafaf6; padding: 17px 18px; }
+.zhiyu-stat span { display: block; color: #747c8e; font-size: .77rem; margin-bottom: 9px; }
+.zhiyu-stat b { font-family: Georgia, "Noto Serif SC", serif; font-size: 1.5rem; color: #1e2d4a; }
+
+.zhiyu-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 24px; align-items: start; }
+.zhiyu-editor-card, .zhiyu-panel { border: 1px solid #dedfd8; border-radius: 14px; background: #fff; overflow: hidden; }
+.zhiyu-editor-head { padding: 18px 24px; display: flex; align-items: center; border-bottom: 1px solid #eaebe5; gap: 12px; }
+.zhiyu-editor-head span { color: #747c8e; font-size: .78rem; }
+.zhiyu-chip { border: 0; border-radius: 99px; padding: 6px 10px; font: inherit; font-size: .75rem; cursor: pointer; margin-left: auto; }
+.zhiyu-chip.private { color: #50586b; background: #eef0ed; }
+.zhiyu-chip.public { color: #216047; background: #def4e3; }
+.zhiyu-editor { padding: 36px 46px 46px; }
+.zhiyu-title-input { width: 100%; border: 0; outline: none; font: 700 clamp(1.7rem, 3vw, 2.4rem)/1.2 Georgia, "Noto Serif SC", serif; color: #17233d; letter-spacing: -.03em; background: transparent; }
+.zhiyu-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 18px 0 25px; color: #788194; font-size: .76rem; }
+.zhiyu-tag { color: #3a617c; background: #eef5f8; border-radius: 5px; padding: 4px 7px; }
+.zhiyu-editor textarea { width: 100%; min-height: 310px; resize: vertical; border: 0; outline: 0; color: #344057; background: transparent; font: 1rem/1.85 var(--font-notion); }
+.zhiyu-editor-foot { padding-top: 18px; border-top: 1px solid #eef0ea; color: #7a8293; font-size: .75rem; display: flex; justify-content: space-between; }
+.zhiyu-panel { margin-bottom: 18px; }
+.zhiyu-panel-head { padding: 17px 18px 12px; display: flex; align-items: center; }
+.zhiyu-panel-head h2 { color: #25314b; font-size: .94rem; margin: 0; }
+.zhiyu-panel-head button { margin-left: auto; border: 0; background: transparent; color: #56738b; cursor: pointer; font: inherit; font-size: .76rem; }
+.zhiyu-find { margin: 0 16px 12px; width: calc(100% - 32px); border: 1px solid #dce1dd; border-radius: 8px; padding: 10px 11px; color: #26314a; outline-color: #9bc9aa; font: inherit; font-size: .83rem; }
+.zhiyu-note-list { padding: 0 8px 9px; }
+.zhiyu-note { width: 100%; padding: 11px 10px; border: 0; background: transparent; border-radius: 8px; text-align: left; cursor: pointer; display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; color: #25314b; font: inherit; }
+.zhiyu-note:hover, .zhiyu-note.active { background: #f0f5ef; }
+.zhiyu-note b { font-size: .83rem; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zhiyu-note span { color: #7c8394; font-size: .72rem; grid-column: 1; }
+.zhiyu-note i { font-style: normal; color: #488064; font-size: .68rem; align-self: start; }
+.zhiyu-publish { padding: 18px; background: #eaf5eb; border-radius: 14px; color: #224335; }
+.zhiyu-publish h2 { margin: 0 0 7px; font-size: .97rem; }
+.zhiyu-publish p { color: #567361; margin: 0 0 14px; font-size: .79rem; line-height: 1.55; }
+.zhiyu-publish button { border: 1px solid #9ac9a7; background: #fff; border-radius: 8px; padding: 8px 10px; color: #2b5d42; font: inherit; font-size: .77rem; cursor: pointer; }
+
+@media (max-width: 880px) {
+  .zhiyu-sidebar { position: static; width: 100%; min-height: auto; }
+  .zhiyu-tree { max-height: 170px; }
+  .zhiyu-sidebar-footer { display: none; }
+  .zhiyu-main { margin-left: 0; }
+  .zhiyu-grid { grid-template-columns: 1fr; }
+  .zhiyu-topbar { padding: 0 20px; }
+  .zhiyu-workspace { padding: 30px 20px; }
+}
+
+@media (max-width: 560px) {
+  .zhiyu-overview { display: block; }
+  .zhiyu-overview p { margin-top: 16px; }
+  .zhiyu-stats { grid-template-columns: 1fr; }
+  .zhiyu-live { display: none; }
+  .zhiyu-editor { padding: 28px 22px; }
+}
