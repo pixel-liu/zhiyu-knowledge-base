@@ -25,6 +25,12 @@ yarn-debug.log*
 yarn-error.log*
 build*.log
 preview*.log
+/local-api-preview*.log
+/data/notes.json
+/data/knowledge.db
+/data/knowledge.db-shm
+/data/knowledge.db-wal
+/public/uploads/
 
 # local env files
 .env*.local

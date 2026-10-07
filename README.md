@@ -1,176 +1,74 @@
-# My Study Notes
+# 知屿文档：本地个人知识库
 
-A self-hostable, Notion-style notes app for publishing a personal knowledge base.
-Write rich documents in a block editor, organize them into a nested tree, and
-publish individual notes as clean, SEO-friendly public pages — while keeping
-editing locked to a single owner account.
+一个只运行在自己电脑上的文档库，参考飞书文档的工作方式：左侧文档树、主编辑区与大纲并排。它不包含飞书的聊天、会议、审批等功能，也不需要登录、云数据库或第三方账号。
 
-Built on Next.js (App Router), Convex, Clerk, BlockNote, and Cloudflare R2.
+完整迭代记录见 [`CHANGELOG.md`](./CHANGELOG.md)。
 
-**Live demo:** [studynotes.terrydjony.com](https://studynotes.terrydjony.com)
+## 已实现
 
-![My Study Notes](public/livedemo.png)
+- 富文本块编辑器：标题、列表、待办、代码块、图片等由 BlockNote 提供
+- 无限层级的文档与子文档；同级文档可以拖动排序
+- 标题和正文自动保存；快速切换文档不会串写内容
+- `Ctrl + K` 全文搜索
+- 标签管理、标签筛选与最近编辑搜索
+- 回收站、恢复与一键永久清空
+- 默认导出当前文档，可切换全量 JSON/Markdown 备份并进行二次确认
+- Markdown 与普通 JSON 文件导入，可指定为顶级文档或任意文档的子文档
+- 正文图片本地上传与插入
+- 大纲跟随正文滚动，支持 1—6 级标题层级与完整标题提示
+- 本地 SQLite 数据库，重启服务或电脑后文档仍保留
 
-## Features
+## 技术栈
 
-* 📝 **Block editor** — rich text powered by [BlockNote](https://www.blocknotejs.org/)
-  (headings, lists, checkboxes, code blocks, images, and more).
-* ⚡ **Slash commands** — type `/` for blocks, plus a custom **page link** command
-  to link to any of your other notes inline.
-* 🌲 **Nested hierarchy** — organize notes into an arbitrarily deep tree of pages.
-* ↕️ **Drag-and-drop reordering** — reorder pages in the sidebar (owner-only),
-  built with [`@dnd-kit`](https://dndkit.com/).
-* 🖼️ **Image uploads** — cover images and inline images stored in
-  **Cloudflare R2** via presigned uploads.
-* 🙂 **Icons & covers** — pick an emoji icon and a cover image per note.
-* 🔎 **Quick search** — a `⌘K` command palette to jump between notes.
-* 🌗 **Light / dark / system theme** — instant theme switcher in the sidebar
-  ([next-themes](https://github.com/pacocoursey/next-themes)).
-* ↔️ **Adjustable sidebar** — resizable and collapsible, mobile-friendly.
-* 🗑️ **Trash** — archive, restore, and permanently delete notes.
-* 🌍 **Publish & SEO** — publish a note to a public `/notes/<slug>` page with
-  auto-generated Open Graph / Twitter cards (Satori), JSON-LD structured data,
-  canonical tags, `sitemap.xml`, and `robots.txt`.
-* 🔐 **Single-owner model** — anyone can read published notes, but only the
-  configured `OWNER_EMAIL` account can create or edit. Authentication via
-  [Clerk](https://clerk.com/) (Google OAuth); the owner email is compared
-  server-side in Convex and never exposed to the client.
-* 🔄 **Real-time** — every change syncs instantly via [Convex](https://convex.dev/).
+| 用途 | 方案 |
+| --- | --- |
+| 前端与本地服务 | Next.js 16、React 19、TypeScript |
+| 富文本编辑 | BlockNote |
+| 本地数据库 | Node.js 内置 `node:sqlite` + SQLite |
+| 文档拖动排序 | dnd-kit |
+| 样式与图标 | Tailwind CSS、Lucide |
 
-## Tech stack
+## 启动
 
-| Layer        | Choice                                                              |
-| ------------ | ------------------------------------------------------------------- |
-| Framework    | [Next.js 16](https://nextjs.org/) (App Router, RSC), [React 19](https://react.dev/) |
-| Language     | TypeScript                                                          |
-| Backend / DB | [Convex](https://convex.dev/) (real-time database + serverless functions) |
-| Auth         | [Clerk](https://clerk.com/) (Google OAuth)                          |
-| Editor       | [BlockNote](https://www.blocknotejs.org/)                           |
-| Styling      | [Tailwind CSS](https://tailwindcss.com/) + [shadcn/ui](https://ui.shadcn.com/) + [Radix UI](https://www.radix-ui.com/) |
-| Icons        | [lucide-react](https://lucide.dev/)                                 |
-| File storage | [Cloudflare R2](https://developers.cloudflare.com/r2/) (S3-compatible, presigned uploads) |
-| State        | [Zustand](https://github.com/pmndrs/zustand), [usehooks-ts](https://usehooks-ts.com/) |
-| Drag & drop  | [@dnd-kit](https://dndkit.com/)                                     |
-| Misc         | [sonner](https://sonner.emilkowal.ski/) (toasts), [zod](https://zod.dev/), emoji-picker-react, react-dropzone |
+前提：安装 Node.js 22 或更新版本（项目已在 Node.js 24 上验证）。第一次使用时，在项目目录打开终端执行：
 
-## Getting started
-
-### Prerequisites
-
-* Node.js 18+ and npm
-* A [Convex](https://convex.dev/) account
-* A [Clerk](https://clerk.com/) account
-* A [Cloudflare R2](https://developers.cloudflare.com/r2/) bucket (for image uploads)
-
-### 1. Clone & install
-
-```bash
-git clone <your-repo-url>
-cd my-study-notes
+```powershell
 npm install
 ```
 
-### 2. Set up Convex
+之后有两种启动方式：
 
-```bash
-npx convex dev
-```
+1. 双击 [`启动知识库.bat`](./启动知识库.bat)。
+2. 在项目目录执行：
 
-This provisions a dev deployment and writes `CONVEX_DEPLOYMENT` and
-`NEXT_PUBLIC_CONVEX_URL` into your `.env.local`. Leave it running in a terminal
-while developing.
-
-### 3. Set up Clerk
-
-1. Create an application in the [Clerk dashboard](https://dashboard.clerk.com/)
-   and enable **Google** as a social connection.
-2. Copy your **Publishable key** and **Secret key** into `.env.local`
-   (`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`).
-3. Create a **JWT template** named exactly `convex`. Copy its **Issuer URL**.
-4. In the **Convex dashboard → Settings → Environment Variables**, set
-   `CLERK_JWT_ISSUER_DOMAIN` to that Issuer URL. (This is read by
-   [`convex/auth.config.js`](convex/auth.config.js); do not put it in `.env.local`.)
-
-### 4. Set up Cloudflare R2
-
-1. Create an R2 bucket.
-2. Create an **R2 API token** (Object Read & Write) and copy the Account ID,
-   Access Key ID, and Secret Access Key.
-3. Enable the bucket's **Public Development URL** (`pub-xxxx.r2.dev`) or attach a
-   custom domain, and use it as `NEXT_PUBLIC_R2_PUBLIC_URL`.
-4. Fill in `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
-   `R2_BUCKET_NAME`, and `NEXT_PUBLIC_R2_PUBLIC_URL` in `.env.local`.
-
-### 5. Configure the site owner
-
-Editing is restricted to one account. Set `OWNER_EMAIL` to the Google email you
-sign in with — in **both** places:
-
-```bash
-# For the Next.js upload route (.env.local)
-OWNER_EMAIL=you@example.com
-
-# For Convex write mutations (deployment env)
-npx convex env set OWNER_EMAIL you@example.com
-```
-
-Anyone can read published notes; only this account can create/edit.
-
-### 6. Run
-
-```bash
+```powershell
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). Sign in with the owner
-account to start writing.
+浏览器打开 <http://localhost:3000>。终端窗口不要关闭；按 `Ctrl + C` 可以停止服务。
 
-## Environment variables
+也可以直接双击 [`关闭知识库.bat`](./关闭知识库.bat) 一键关闭本项目启动的服务。它只匹配当前项目目录下的 Next 开发进程，不会关闭其他项目的 Node 服务。
 
-See [`.env.example`](.env.example) for the full annotated list. Summary:
+## 数据与备份
 
-| Variable                            | Where        | Purpose                                            |
-| ----------------------------------- | ------------ | -------------------------------------------------- |
-| `CONVEX_DEPLOYMENT`                 | `.env.local` | Set by `npx convex dev`                            |
-| `NEXT_PUBLIC_CONVEX_URL`            | `.env.local` | Set by `npx convex dev`                            |
-| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | `.env.local` | Clerk publishable key                              |
-| `CLERK_SECRET_KEY`                  | `.env.local` | Clerk secret key                                   |
-| `CLERK_JWT_ISSUER_DOMAIN`           | Convex env   | Issuer URL of the `convex` JWT template            |
-| `R2_ACCOUNT_ID`                     | `.env.local` | Cloudflare R2 account ID                           |
-| `R2_ACCESS_KEY_ID`                  | `.env.local` | R2 API token access key                            |
-| `R2_SECRET_ACCESS_KEY`              | `.env.local` | R2 API token secret                                |
-| `R2_BUCKET_NAME`                    | `.env.local` | R2 bucket name                                     |
-| `NEXT_PUBLIC_R2_PUBLIC_URL`         | `.env.local` | Public base URL the bucket is served from          |
-| `NEXT_PUBLIC_SITE_URL`              | `.env.local` | Canonical base for sitemap / OG / canonical tags   |
-| `OWNER_EMAIL`                       | both         | The single account allowed to edit                 |
+所有文档都保存在本项目的 `data/knowledge.db` 中。这个文件不会提交到 Git，也不会自动上传到任何云端。
 
-## Project structure
+右上角“更多功能”可以导出 JSON 或 Markdown。默认只导出当前文档；开启“全量备份”后会导出整个文档库，执行前均会再次确认。JSON 备份可通过“导入备份”恢复到当前文档库。
 
-```
-app/                  Next.js App Router
-  (main)/             Authenticated editor app (sidebar, documents)
-  notes/[slug]/       Public published note pages (+ OG/Twitter images)
-  api/upload/         Presigned R2 upload/delete route (owner-gated)
-  sitemap.ts          robots.ts          SEO endpoints
-components/           Editor, toolbar, modals, shadcn/ui primitives
-convex/               Schema, document queries/mutations, auth config
-hooks/                Client hooks (owner check, search, cover image, ...)
-lib/                  R2 client, slugify, note rendering, upload helpers
+也可以先停止服务，再把 `data/knowledge.db` 复制到另一个磁盘或网盘进行整库备份。不要把本地数据库直接暴露到公网。
+
+## 项目结构
+
+```text
+app/knowledge-desk.tsx       文档库主界面
+app/api/documents/           文档、新建、保存、回收站接口
+app/api/search/              本地全文搜索接口
+components/document-editor.tsx  BlockNote 编辑器
+lib/documents-db.ts          SQLite 数据访问与迁移
+data/knowledge.db            本机数据（首次启动自动创建）
+legacy-source/               原 GitHub 项目的云端实现备份，仅作参考
 ```
 
-## Deployment
+## 来源与许可
 
-Deploy the frontend to [Vercel](https://vercel.com/) and push your Convex
-functions to a production deployment with `npx convex deploy`. Use Clerk
-**production** keys and set every environment variable above (including
-`CLERK_JWT_ISSUER_DOMAIN` and `OWNER_EMAIL` in the production Convex deployment,
-and `NEXT_PUBLIC_SITE_URL` to your real domain).
-
-## Credit
-
-Built by [terrydjony.com](https://terrydjony.com). Originally inspired by
-[AntonioErdeljac/notion-clone-tutorial](https://github.com/AntonioErdeljac/notion-clone-tutorial).
-
-## License
-
-MIT
+项目最初基于 [terrydjony/notion-style-personal-site](https://github.com/terrydjony/notion-style-personal-site)（MIT）整理，原项目的云端 Convex、Clerk、R2 页面已保留在 `legacy-source/`，当前运行入口改为本地单机文档库。

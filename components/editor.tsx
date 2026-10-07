@@ -15,7 +15,7 @@ import {
 } from "@blocknote/react";
 import { BlockNoteView } from "@blocknote/mantine";
 import "@blocknote/mantine/style.css";
-import { useTheme } from "next-themes";
+import { useTheme } from "@/components/providers/theme-provider";
 import { useRouter } from "next/navigation";
 import { FileText } from "lucide-react";
 import { useMutation, useQuery } from "convex/react";

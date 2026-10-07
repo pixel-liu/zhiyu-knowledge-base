@@ -4,7 +4,6 @@ const r2Host = process.env.NEXT_PUBLIC_R2_PUBLIC_URL
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: "export",
   // Load BlockNote's server renderer outside the RSC bundle so it uses the normal
   // React build (it imports React context code that the react-server build lacks).
   serverExternalPackages: ["@blocknote/server-util"],
