@@ -5,7 +5,7 @@ import {
   ListTree, MoreHorizontal, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Search, Trash2,
   Moon, PencilLine, Pin, Sun, Undo2, X,
 } from "lucide-react";
-import { ChangeEvent as ReactChangeEvent, DragEvent as ReactDragEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent as ReactChangeEvent, CSSProperties, DragEvent as ReactDragEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import { DndContext, DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -131,6 +131,9 @@ export function KnowledgeDesk() {
   const [expanded, setExpanded] = useState(() => new Set<string>());
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [outlineOpen, setOutlineOpen] = useState(true);
+  const [sidebarWidth, setSidebarWidth] = useState(292);
+  const [outlineWidth, setOutlineWidth] = useState(292);
+  const [resizingPane, setResizingPane] = useState<"sidebar" | "outline" | null>(null);
   const [activeOutlineId, setActiveOutlineId] = useState<string | null>(null);
   const [outlineTooltip, setOutlineTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -154,6 +157,7 @@ export function KnowledgeDesk() {
   const titleInput = useRef<HTMLInputElement>(null);
   const backupInput = useRef<HTMLInputElement>(null);
   const markdownInput = useRef<HTMLInputElement>(null);
+  const resizeSession = useRef<{ pane: "sidebar" | "outline"; pointerId: number; startX: number; startWidth: number } | null>(null);
 
   const selected = documents.find((item) => item.id === selectedId) ?? documents[0];
   const outline = useMemo(() => selected ? headingsFrom(selected.content) : [], [selected]);
@@ -192,7 +196,21 @@ export function KnowledgeDesk() {
   };
 
   useEffect(() => { void loadDocuments(); }, []);
-  useEffect(() => { setMounted(true); }, []);
+  useEffect(() => {
+    setMounted(true);
+    const savedSidebarWidth = Number(window.localStorage.getItem("knowledge-desk:sidebar-width"));
+    const savedOutlineWidth = Number(window.localStorage.getItem("knowledge-desk:outline-width"));
+    if (Number.isFinite(savedSidebarWidth) && savedSidebarWidth > 0) setSidebarWidth(Math.max(220, Math.min(480, savedSidebarWidth)));
+    if (Number.isFinite(savedOutlineWidth) && savedOutlineWidth > 0) setOutlineWidth(Math.max(220, Math.min(480, savedOutlineWidth)));
+  }, []);
+  useEffect(() => {
+    if (!mounted) return;
+    const timer = window.setTimeout(() => {
+      window.localStorage.setItem("knowledge-desk:sidebar-width", String(sidebarWidth));
+      window.localStorage.setItem("knowledge-desk:outline-width", String(outlineWidth));
+    }, 160);
+    return () => window.clearTimeout(timer);
+  }, [mounted, sidebarWidth, outlineWidth]);
   useEffect(() => { if (selectedId) window.localStorage.setItem("knowledge-desk:selected", selectedId); }, [selectedId]);
   useEffect(() => () => { saveQueue.current.forEach((entry) => { if (entry.timer) clearTimeout(entry.timer); }); }, []);
   useEffect(() => {
@@ -443,14 +461,79 @@ export function KnowledgeDesk() {
     event.preventDefault();
     setContextMenu({ id, x: Math.min(event.clientX, window.innerWidth - 176), y: Math.min(event.clientY, window.innerHeight - 116) });
   };
+  const paneMaxWidth = (pane: "sidebar" | "outline") => {
+    const otherPaneWidth = pane === "sidebar"
+      ? (window.innerWidth > 980 && selected ? (outlineOpen ? outlineWidth : 48) : 0)
+      : (sidebarOpen ? sidebarWidth : 0);
+    return Math.max(220, Math.min(480, window.innerWidth - otherPaneWidth - 430));
+  };
+  const updatePaneWidth = (pane: "sidebar" | "outline", width: number) => {
+    const next = Math.max(220, Math.min(paneMaxWidth(pane), width));
+    if (pane === "sidebar") setSidebarWidth(next);
+    else setOutlineWidth(next);
+  };
+  const startPaneResize = (pane: "sidebar" | "outline", event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    resizeSession.current = {
+      pane,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startWidth: pane === "sidebar" ? sidebarWidth : outlineWidth,
+    };
+    setResizingPane(pane);
+  };
+  const movePaneResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const session = resizeSession.current;
+    if (!session || session.pointerId !== event.pointerId) return;
+    const delta = event.clientX - session.startX;
+    updatePaneWidth(session.pane, session.startWidth + (session.pane === "sidebar" ? delta : -delta));
+  };
+  const endPaneResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const session = resizeSession.current;
+    if (!session || session.pointerId !== event.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    resizeSession.current = null;
+    setResizingPane(null);
+  };
+  const resizePaneWithKeyboard = (pane: "sidebar" | "outline", event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const direction = event.key === "ArrowRight" ? 1 : -1;
+    const current = pane === "sidebar" ? sidebarWidth : outlineWidth;
+    updatePaneWidth(pane, current + direction * (pane === "sidebar" ? 16 : -16));
+  };
+  const paneDivider = (pane: "sidebar" | "outline") => {
+    const value = pane === "sidebar" ? sidebarWidth : outlineWidth;
+    const label = pane === "sidebar" ? "调整文档栏宽度" : "调整大纲栏宽度";
+    return <div
+      className={`doc-pane-resizer doc-${pane}-resizer ${resizingPane === pane ? "is-active" : ""}`}
+      role="separator"
+      aria-label={label}
+      aria-orientation="vertical"
+      aria-valuemin={220}
+      aria-valuemax={480}
+      aria-valuenow={Math.round(value)}
+      tabIndex={0}
+      title={`${label}；双击恢复默认宽度`}
+      onPointerDown={(event) => startPaneResize(pane, event)}
+      onPointerMove={movePaneResize}
+      onPointerUp={endPaneResize}
+      onPointerCancel={endPaneResize}
+      onLostPointerCapture={() => { resizeSession.current = null; setResizingPane(null); }}
+      onKeyDown={(event) => resizePaneWithKeyboard(pane, event)}
+      onDoubleClick={() => updatePaneWidth(pane, 292)}
+    />;
+  };
   const darkMode = mounted && resolvedTheme === "dark";
 
   return <div className="docspace">
     <header className="doc-topbar"><div className="doc-topbar-left"><BookOpen size={19} /><b>知屿文档</b><span>我的文档库</span></div><div className="doc-topbar-actions"><span className={`doc-save-status ${status === "正在保存" ? "saving" : ""}`}><i />{status}</span><button title={mounted ? (darkMode ? "切换为白色模式" : "切换为黑色模式") : "切换主题"} aria-label={mounted ? (darkMode ? "切换为白色模式" : "切换为黑色模式") : "切换主题"} onClick={() => setTheme(darkMode ? "light" : "dark")}>{mounted && darkMode ? <Sun size={18} /> : <Moon size={18} />}</button><button title="搜索" onClick={() => setSearchOpen(true)}><Search size={18} /></button><div className="doc-more-wrap"><button title="更多功能" onClick={() => setMoreOpen((value) => !value)}><MoreHorizontal size={19} /></button>{moreOpen && <div className="doc-more-menu" onClick={(event) => event.stopPropagation()}><button onClick={() => requestExport("json")}><span>导出 JSON 备份</span><small>{exportAll ? "完整文档库" : "当前文档"}</small></button><div className="doc-backup-toggle-row"><span>全量备份</span><button type="button" className={`doc-backup-toggle ${exportAll ? "is-on" : ""}`} aria-pressed={exportAll} aria-label={exportAll ? "关闭全量备份" : "开启全量备份"} onClick={(event) => { event.stopPropagation(); setExportAll((value) => !value); }}><span><i /></span></button></div><button onClick={() => requestExport("markdown")}><span>导出 Markdown</span><small>{exportAll ? "完整文档库" : "当前文档"}</small></button><button onClick={() => markdownInput.current?.click()}><span>导入文档</span><small>Markdown / JSON，可选择父级</small></button><button onClick={() => backupInput.current?.click()}><span>导入备份</span><small>合并到当前文档库</small></button></div>}<input ref={markdownInput} className="doc-hidden-input" type="file" accept="text/markdown,application/json,.md,.markdown,.json" onChange={(event) => void selectMarkdownFile(event)} /><input ref={backupInput} className="doc-hidden-input" type="file" accept="application/json,.json" onChange={(event) => void importBackupFile(event)} /></div></div></header>
-    <div className="doc-layout">
-      {sidebarOpen && <aside className="doc-sidebar"><div className="doc-sidebar-tools"><button className="doc-new" onClick={() => create()}><FilePlus2 size={16} />新建文档</button><button className="doc-search" onClick={() => setSearchOpen(true)}><Search size={16} /><span>搜索</span><kbd>Ctrl K</kbd></button></div><div className="doc-sidebar-label"><span>我的文档库</span><span className="doc-sidebar-label-actions"><button onClick={() => create()} title="新建文档"><FilePlus2 size={15} /></button><button onClick={() => setSidebarOpen(false)} title="收起左侧面板" aria-label="收起左侧面板"><PanelLeftClose size={15} /></button></span></div><nav className="doc-tree" aria-label="文档树" onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }} onDrop={(event) => { event.preventDefault(); const id = event.dataTransfer.getData("text/plain"); if (id) void moveDocument(id, null); }}><DocumentTree documents={documents} selectedId={selected?.id ?? null} expanded={expanded} onSelect={choose} onToggle={(id) => setExpanded((items) => { const next = new Set(items); next.has(id) ? next.delete(id) : next.add(id); return next; })} onNewChild={(parentId) => void create(parentId)} onReorder={(parentId, ids) => void reorder(parentId, ids)} onContextMenu={openContextMenu} onMove={moveDocument} /></nav><div className="doc-sidebar-bottom"><button onClick={() => void openTrash()}><Trash2 size={16} />回收站</button><p>文档保存在这台电脑的本地数据库中。</p></div></aside>}
+    <div className={`doc-layout ${resizingPane ? "is-resizing" : ""}`} style={{ "--sidebar-width": `${sidebarWidth}px`, "--outline-width": `${outlineWidth}px` } as CSSProperties}>
+      {sidebarOpen && <><aside className="doc-sidebar"><div className="doc-sidebar-tools"><button className="doc-new" onClick={() => create()}><FilePlus2 size={16} />新建文档</button><button className="doc-search" onClick={() => setSearchOpen(true)}><Search size={16} /><span>搜索</span><kbd>Ctrl K</kbd></button></div><div className="doc-sidebar-label"><span>我的文档库</span><span className="doc-sidebar-label-actions"><button onClick={() => create()} title="新建文档"><FilePlus2 size={15} /></button><button onClick={() => setSidebarOpen(false)} title="收起左侧面板" aria-label="收起左侧面板"><PanelLeftClose size={15} /></button></span></div><nav className="doc-tree" aria-label="文档树" onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }} onDrop={(event) => { event.preventDefault(); const id = event.dataTransfer.getData("text/plain"); if (id) void moveDocument(id, null); }}><DocumentTree documents={documents} selectedId={selected?.id ?? null} expanded={expanded} onSelect={choose} onToggle={(id) => setExpanded((items) => { const next = new Set(items); next.has(id) ? next.delete(id) : next.add(id); return next; })} onNewChild={(parentId) => void create(parentId)} onReorder={(parentId, ids) => void reorder(parentId, ids)} onContextMenu={openContextMenu} onMove={moveDocument} /></nav><div className="doc-sidebar-bottom"><button onClick={() => void openTrash()}><Trash2 size={16} />回收站</button><p>文档保存在这台电脑的本地数据库中。</p></div></aside>{paneDivider("sidebar")}</>}
       <section className="doc-workbench"><button className="doc-collapse" onClick={() => setSidebarOpen((value) => !value)} title="收起/展开文档库">{sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}</button>{selected ? <main className="doc-canvas"><div className="doc-breadcrumb">我的文档库 <ChevronRight size={14} /> {selected.parentId ? documents.find((item) => item.id === selected.parentId)?.title || "子文档" : "文档"}</div><input ref={titleInput} className="doc-title-input" value={selected.title} onChange={(event) => save(selected.id, { title: event.target.value })} placeholder="未命名文档" aria-label="文档标题" /><div className="doc-meta"><span>{selected.icon || "📄"}</span><span>最后修改：{formatTime(selected.updatedAt)}</span><button onClick={() => requestRemove()}><Trash2 size={15} />移入回收站</button></div><div className="doc-tags"><span className="doc-tags-label">标签</span>{selected.tags.map((tag) => <button type="button" className="doc-tag" key={tag} onClick={() => removeTag(tag)} title="移除标签">#{tag}<X size={11} /></button>)}<input value={tagDraft} onChange={(event) => setTagDraft(event.target.value)} onKeyDown={addTag} placeholder="输入标签后按回车" aria-label="添加标签" /></div><div className="doc-editor" id="document-editor"><DocumentEditor key={selected.id} content={selected.content} onChange={(content) => save(selected.id, { content })} /></div></main> : <main className="doc-empty"><FileText size={34} /><h1>创建第一篇文档</h1><p>从左侧新建文档，内容会自动保存到本机。</p><button className="doc-new" onClick={() => create()}><FilePlus2 size={16} />新建文档</button></main>}</section>
-      {selected && <aside className={`doc-outline ${outlineOpen ? "" : "is-collapsed"}`}><div className="doc-outline-title"><span>大纲</span><button onClick={() => setOutlineOpen((value) => !value)} title={outlineOpen ? "收起右侧目录" : "展开右侧目录"} aria-label={outlineOpen ? "收起右侧目录" : "展开右侧目录"}>{outlineOpen ? <PanelRightClose size={19} /> : <PanelRightOpen size={19} />}</button></div>{outlineOpen && (outline.length ? <nav>{outline.map((item) => <a key={item.id} className={`outline-level-${item.level} ${activeOutlineId === item.id ? "is-active" : ""}`} href="#document-editor" aria-label={item.text} onMouseEnter={(event) => { const rect = event.currentTarget.getBoundingClientRect(); setOutlineTooltip({ text: item.text, x: rect.left + rect.width / 2, y: rect.top - 8 }); }} onMouseLeave={() => setOutlineTooltip(null)} onClick={(event) => { event.preventDefault(); setOutlineTooltip(null); setActiveOutlineId(item.id); document.querySelectorAll("#document-editor [data-content-type='heading']")[item.headingIndex]?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>{item.text}</a>)}</nav> : <p>为正文添加标题后，会在这里显示文档大纲。</p>)}</aside>}
+      {selected && <>{outlineOpen && paneDivider("outline")}<aside className={`doc-outline ${outlineOpen ? "" : "is-collapsed"}`}><div className="doc-outline-title"><span>大纲</span><button onClick={() => setOutlineOpen((value) => !value)} title={outlineOpen ? "收起右侧目录" : "展开右侧目录"} aria-label={outlineOpen ? "收起右侧目录" : "展开右侧目录"}>{outlineOpen ? <PanelRightClose size={19} /> : <PanelRightOpen size={19} />}</button></div>{outlineOpen && (outline.length ? <nav>{outline.map((item) => <a key={item.id} className={`outline-level-${item.level} ${activeOutlineId === item.id ? "is-active" : ""}`} href="#document-editor" aria-label={item.text} onMouseEnter={(event) => { const rect = event.currentTarget.getBoundingClientRect(); setOutlineTooltip({ text: item.text, x: rect.left + rect.width / 2, y: rect.top - 8 }); }} onMouseLeave={() => setOutlineTooltip(null)} onClick={(event) => { event.preventDefault(); setOutlineTooltip(null); setActiveOutlineId(item.id); document.querySelectorAll("#document-editor [data-content-type='heading']")[item.headingIndex]?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>{item.text}</a>)}</nav> : <p>为正文添加标题后，会在这里显示文档大纲。</p>)}</aside></>}
     </div>
     {error && <div className="doc-toast">{error}<button onClick={() => setError("")}><X size={15} /></button></div>}
     {outlineTooltip && <div className="doc-outline-tooltip" role="tooltip" style={{ left: outlineTooltip.x, top: outlineTooltip.y }}>{outlineTooltip.text}</div>}
