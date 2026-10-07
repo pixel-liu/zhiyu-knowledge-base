@@ -333,7 +333,7 @@ export function KnowledgeDesk() {
     if (!markdownImport || importingMarkdown) return;
     setImportingMarkdown(true);
     try {
-      const document = await readJson<DocumentRecord>(await fetch("/api/documents", {
+      const document = await readJson<DocumentRecord>(await fetch(markdownImport.format === "markdown" ? "/api/import/markdown" : "/api/documents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ parentId: markdownImport.parentId, title: markdownImport.title, content: markdownImport.content }),
