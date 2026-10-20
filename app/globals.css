@@ -423,6 +423,12 @@ body {
 .dark .doc-import-modal label { color:#c5c8cf; }
 .dark .doc-import-modal input,.dark .doc-import-modal select { border-color:#44464d; color:#e6e7eb; background:#2d2f34; }
 .dark .doc-confirm-actions .primary { border-color:#4777e5; color:#fff; background:#4777e5; }
+.doc-move-confirm-modal > div { min-width:0; }
+.doc-body-loading { padding:24px 0; color:#8a8f98; font-size:14px; }
+.doc-move-confirm-modal p { overflow-wrap:anywhere; }
+.doc-move-confirm-modal .doc-confirm-icon { color:#3264d8; background:#edf3ff; }
+.doc-move-confirm-modal .doc-confirm-actions button { margin-top:0; }
+.dark .doc-move-confirm-modal .doc-confirm-icon { color:#9bb5f5; background:#293652; }
 /* Resizable document panes */
 .doc-layout { --sidebar-width:292px; --outline-width:292px; }
 .doc-sidebar { width:var(--sidebar-width); flex-basis:var(--sidebar-width); border-right:0; }

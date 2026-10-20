@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createDocument, listDocuments } from "@/lib/documents-db";
+import { createDocument, listDocumentSummaries } from "@/lib/documents-db";
 import { z } from "zod";
 
 export const runtime = "nodejs";
@@ -13,7 +13,8 @@ const createSchema = z.object({
 
 export async function GET(request: NextRequest) {
   const includeDeleted = new URL(request.url).searchParams.get("includeDeleted") === "true";
-  return NextResponse.json(listDocuments(includeDeleted));
+  const deletedOnly = new URL(request.url).searchParams.get("deletedOnly") === "true";
+  return NextResponse.json(listDocumentSummaries(includeDeleted, deletedOnly));
 }
 
 export async function POST(request: NextRequest) {

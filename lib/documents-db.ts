@@ -2,23 +2,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-
-export type DocumentRecord = {
-  id: string;
-  parentId: string | null;
-  title: string;
-  icon: string | null;
-  tags: string[];
-  content: string;
-  plainText: string;
-  sortOrder: number;
-  isPinned: boolean;
-  isDeleted: boolean;
-  createdAt: string;
-  updatedAt: string;
-  deletedAt: string | null;
-  snippet?: string;
-};
+import type { DocumentRecord, DocumentSummary } from "./document-types";
+export type { DocumentRecord } from "./document-types";
 
 type DocumentRow = {
   id: string;
@@ -36,7 +21,7 @@ type DocumentRow = {
   deleted_at: string | null;
 };
 
-const dataDirectory = path.join(process.cwd(), "data");
+const dataDirectory = process.env.ZHIYU_DATA_DIR ? path.resolve(process.env.ZHIYU_DATA_DIR) : path.join(process.cwd(), "data");
 const databasePath = path.join(dataDirectory, "knowledge.db");
 const legacyNotesPath = path.join(dataDirectory, "notes.json");
 
@@ -53,14 +38,12 @@ const parseTags = (value: string | null | undefined) => {
   } catch { return []; }
 };
 
-const toRecord = (row: DocumentRow): DocumentRecord => ({
+const toSummary = (row: Omit<DocumentRow, "content" | "plain_text">): DocumentSummary => ({
   id: row.id,
   parentId: row.parent_id,
   title: row.title,
   icon: row.icon,
   tags: parseTags(row.tags),
-  content: row.content,
-  plainText: row.plain_text,
   sortOrder: row.sort_order,
   isPinned: Boolean(row.is_pinned),
   isDeleted: Boolean(row.is_deleted),
@@ -68,6 +51,9 @@ const toRecord = (row: DocumentRow): DocumentRecord => ({
   updatedAt: row.updated_at,
   deletedAt: row.deleted_at,
 });
+
+const toRecord = (row: DocumentRow): DocumentRecord => ({ ...toSummary(row), content: row.content, plainText: row.plain_text });
+const summaryColumns = "id, parent_id, title, icon, tags, sort_order, is_pinned, is_deleted, created_at, updated_at, deleted_at";
 
 const emptyContent = () => JSON.stringify([
   { type: "paragraph", content: [] },
@@ -145,6 +131,10 @@ function getDatabase() {
       WHERE is_deleted = 0;
     CREATE INDEX IF NOT EXISTS idx_documents_deleted_at
       ON documents(is_deleted, deleted_at);
+    CREATE INDEX IF NOT EXISTS idx_documents_recent
+      ON documents(is_deleted, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_documents_parent
+      ON documents(parent_id);
   `);
 
   const columns = db.prepare("PRAGMA table_info(documents)").all() as Array<{ name: string }>;
@@ -214,6 +204,11 @@ export function listDocuments(includeDeleted = false) {
   return (db.prepare(sql).all() as unknown as DocumentRow[]).map(toRecord);
 }
 
+export function listDocumentSummaries(includeDeleted = false, deletedOnly = false) {
+  const where = deletedOnly ? "WHERE is_deleted = 1" : includeDeleted ? "" : "WHERE is_deleted = 0";
+  return (getDatabase().prepare(`SELECT ${summaryColumns} FROM documents ${where} ORDER BY parent_id, is_pinned DESC, sort_order, created_at`).all() as unknown as Array<Omit<DocumentRow, "content" | "plain_text">>).map(toSummary);
+}
+
 export function getDocument(id: string) {
   const db = getDatabase();
   const row = db.prepare("SELECT * FROM documents WHERE id = ?").get(id) as DocumentRow | undefined;
@@ -263,7 +258,7 @@ export function updateDocument(id: string, patch: Partial<Pick<DocumentRecord, "
   if (!existing || existing.isDeleted) return null;
   const nextParentId = patch.parentId === undefined ? existing.parentId : patch.parentId;
   if (nextParentId === id) throw new Error("不能将文档设为自己的父级");
-  if (nextParentId) {
+  if (nextParentId && nextParentId !== existing.parentId) {
     const parent = getDocument(nextParentId);
     if (!parent || parent.isDeleted) throw new Error("目标父文档不存在");
     if (descendantIds(db, id).includes(nextParentId)) throw new Error("不能移动到自己的子文档中");
@@ -278,13 +273,27 @@ export function updateDocument(id: string, patch: Partial<Pick<DocumentRecord, "
     isPinned: patch.isPinned === undefined ? existing.isPinned : Boolean(patch.isPinned),
     updatedAt: now(),
   };
-  document.plainText = contentToText(document.content);
-  db.prepare(`
-    UPDATE documents
-    SET parent_id = ?, title = ?, icon = ?, tags = ?, content = ?, plain_text = ?, is_pinned = ?, updated_at = ?
-    WHERE id = ?
-  `).run(document.parentId, document.title, document.icon, JSON.stringify(document.tags), document.content, document.plainText, document.isPinned ? 1 : 0, document.updatedAt, document.id);
-  refreshSearchIndex(db, document);
+  const contentChanged = document.content !== existing.content;
+  if (contentChanged) document.plainText = contentToText(document.content);
+  const changes: Array<[string, string | number | null]> = [["updated_at", document.updatedAt]];
+  if (document.parentId !== existing.parentId) {
+    changes.push(["parent_id", document.parentId]);
+    const last = db.prepare("SELECT MAX(sort_order) AS last FROM documents WHERE parent_id IS ? AND is_deleted = 0 AND id != ?").get(document.parentId, id) as { last: number | null };
+    document.sortOrder = (last.last ?? -1) + 1;
+    changes.push(["sort_order", document.sortOrder]);
+  }
+  if (document.title !== existing.title) changes.push(["title", document.title]);
+  if (document.icon !== existing.icon) changes.push(["icon", document.icon]);
+  if (JSON.stringify(document.tags) !== JSON.stringify(existing.tags)) changes.push(["tags", JSON.stringify(document.tags)]);
+  if (document.isPinned !== existing.isPinned) changes.push(["is_pinned", Number(document.isPinned)]);
+  if (contentChanged) changes.push(["content", document.content], ["plain_text", document.plainText]);
+  db.exec("BEGIN");
+  try {
+    db.prepare(`UPDATE documents SET ${changes.map(([column]) => `${column} = ?`).join(", ")} WHERE id = ?`)
+      .run(...changes.map(([, value]) => value), id);
+    if (contentChanged || document.title !== existing.title) refreshSearchIndex(db, document);
+    db.exec("COMMIT");
+  } catch (cause) { db.exec("ROLLBACK"); throw cause; }
   return document;
 }
 
@@ -420,12 +429,17 @@ export function searchDocuments(query: string, tag = "") {
     params.push(tag);
   }
   const rows = db.prepare(`
-    SELECT d.* FROM documents d
+    SELECT ${summaryColumns}, plain_text FROM documents d
     WHERE ${conditions.join(" AND ")}
     ORDER BY d.updated_at DESC
     LIMIT 30
   `).all(...params) as unknown as DocumentRow[];
-  return rows.map(toRecord).map((document) => ({ ...document, snippet: makeSnippet(document.plainText, query) }));
+  return rows.map((row) => ({ ...toSummary(row), snippet: makeSnippet(row.plain_text, query) }));
+}
+
+export function recentDocuments() {
+  const rows = getDatabase().prepare(`SELECT ${summaryColumns}, substr(plain_text, 1, 110) AS snippet FROM documents WHERE is_deleted = 0 ORDER BY updated_at DESC LIMIT 12`).all() as unknown as Array<DocumentRow & { snippet: string }>;
+  return rows.map((row) => ({ ...toSummary(row), snippet: row.snippet || "空文档" }));
 }
 
 export function exportBackup(documentId?: string) {

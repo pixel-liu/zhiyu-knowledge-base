@@ -12,7 +12,7 @@ import { SideMenuExtension } from "@blocknote/core/extensions";
 import type { DefaultReactSuggestionItem, SuggestionMenuProps } from "@blocknote/react";
 import { useTheme } from "@/components/providers/theme-provider";
 import { uploadFile } from "@/lib/upload";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 type DocumentEditorProps = {
   content: string;
@@ -322,12 +322,10 @@ function decorateCodeBlocks(editor: { document: Array<{ id: string; type: string
   });
 }
 
-export function DocumentEditor({ content, onChange }: DocumentEditorProps) {
+export const DocumentEditor = memo(function DocumentEditor({ content, onChange }: DocumentEditorProps) {
   const { resolvedTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-  const initial = useMemo(() => readBlocks(content), [content]);
+  const [initial] = useState(() => readBlocks(content));
   const migrationApplied = useRef(false);
-  useEffect(() => { setMounted(true); }, []);
   const editor = useCreateBlockNote({
     initialContent: initial.blocks,
     dictionary: zh,
@@ -343,6 +341,30 @@ export function DocumentEditor({ content, onChange }: DocumentEditorProps) {
       return defaultPasteHandler({ prioritizeMarkdownOverHTML: true, plainTextAsMarkdown: true });
     },
   });
+  const bufferedChange = useRef(false);
+  const changeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flushChange = useCallback(() => {
+    if (changeTimer.current) clearTimeout(changeTimer.current);
+    changeTimer.current = null;
+    if (!bufferedChange.current) return;
+    bufferedChange.current = false;
+    onChange(JSON.stringify(editor.document));
+  }, [editor, onChange]);
+  const scheduleChange = useCallback(() => {
+    bufferedChange.current = true;
+    // Serialize at most once per 160 ms, even during uninterrupted typing.
+    if (!changeTimer.current) changeTimer.current = setTimeout(flushChange, 160);
+  }, [flushChange]);
+  useEffect(() => {
+    const onHidden = () => { if (document.hidden) flushChange(); };
+    window.addEventListener("pagehide", flushChange);
+    document.addEventListener("visibilitychange", onHidden);
+    return () => {
+      window.removeEventListener("pagehide", flushChange);
+      document.removeEventListener("visibilitychange", onHidden);
+      flushChange();
+    };
+  }, [flushChange]);
   useEffect(() => {
     if (initial.migrated && !migrationApplied.current) {
       migrationApplied.current = true;
@@ -374,10 +396,10 @@ export function DocumentEditor({ content, onChange }: DocumentEditorProps) {
   return (
     <BlockNoteView
       editor={editor}
-      theme={mounted && resolvedTheme === "dark" ? "dark" : "light"}
+      theme={resolvedTheme}
       sideMenu={false}
       slashMenu={false}
-      onChange={() => onChange(JSON.stringify(editor.document))}
+      onChange={scheduleChange}
     >
       <SideMenuController sideMenu={ZhiyuSideMenu} />
       <SuggestionMenuController
@@ -386,4 +408,4 @@ export function DocumentEditor({ content, onChange }: DocumentEditorProps) {
       />
     </BlockNoteView>
   );
-}
+});
