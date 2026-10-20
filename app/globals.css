@@ -432,7 +432,10 @@ body {
 /* Resizable document panes */
 .doc-layout { --sidebar-width:292px; --outline-width:292px; }
 .doc-sidebar { width:var(--sidebar-width); flex-basis:var(--sidebar-width); border-right:0; }
-.doc-outline { width:var(--outline-width); flex-basis:var(--outline-width); margin-left:0; border-left:0; }
+.doc-outline { flex-direction:column; overflow:hidden; width:var(--outline-width); flex-basis:var(--outline-width); margin-left:0; border-left:0; }
+.doc-outline-title { flex-shrink:0; }
+.doc-outline nav { min-height:0; overflow-y:auto; align-content:start; grid-auto-rows:max-content; }
+@media (min-width:981px) { .doc-outline { display:flex; } }
 .doc-pane-resizer { position:sticky; top:60px; z-index:12; align-self:flex-start; width:7px; height:calc(100vh - 60px); flex:0 0 7px; padding:0; cursor:col-resize; touch-action:none; user-select:none; outline:none; background:transparent; }
 .doc-pane-resizer::before { content:""; position:absolute; inset:0 auto 0 3px; width:1px; background:var(--line); transition:width .12s ease, left .12s ease, background-color .12s ease; }
 .doc-pane-resizer:hover::before,.doc-pane-resizer:focus-visible::before,.doc-pane-resizer.is-active::before { left:2px; width:3px; background:#4f7de5; }
