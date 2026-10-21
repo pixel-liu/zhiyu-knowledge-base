@@ -23,7 +23,7 @@ test("document summaries, selective updates, search and atomic index updates", (
   });
   const db = load("lib/documents-db.ts", {
     process: { ...process, env: { ...process.env, ZHIYU_DATA_DIR: directory } },
-    require: (name) => name === "node:sqlite" ? { DatabaseSync: TestDatabase } : require(name),
+    require: (name, fallback) => name === "node:sqlite" ? { DatabaseSync: TestDatabase } : fallback(name),
   });
   const body = JSON.stringify([{ type: "paragraph", content: "这是可搜索的中文正文 architecture" }]);
   const a = db.createDocument({ title: "Parent", content: body });

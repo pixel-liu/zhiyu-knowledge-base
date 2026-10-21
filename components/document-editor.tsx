@@ -13,10 +13,16 @@ import type { DefaultReactSuggestionItem, SuggestionMenuProps } from "@blocknote
 import { useTheme } from "@/components/providers/theme-provider";
 import { uploadFile } from "@/lib/upload";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
+import type { DocumentSummary } from "@/lib/document-types";
+import { documentHref, linkedDocumentId, linkifyInlineContent, type LinkReference } from "@/lib/document-links";
+import { useStableCallback } from "@/hooks/use-stable-callback";
 
 type DocumentEditorProps = {
   content: string;
   onChange: (content: string) => void;
+  documents: DocumentSummary[];
+  bindings?: LinkReference[];
+  onSelect: (id: string) => void;
 };
 
 function normalizeEscapedCodeFences(markdown: string) {
@@ -322,10 +328,15 @@ function decorateCodeBlocks(editor: { document: Array<{ id: string; type: string
   });
 }
 
-export const DocumentEditor = memo(function DocumentEditor({ content, onChange }: DocumentEditorProps) {
+function WikiSuggestionMenu({ items, selectedIndex, onItemClick, loadingState }: SuggestionMenuProps<DefaultReactSuggestionItem>) {
+  return <div className="doc-wiki-menu" role="listbox" aria-label="引用文档"><p>选择要引用的文档</p>{items.map((item, index) => <button key={index} type="button" role="option" aria-selected={selectedIndex === index} className={selectedIndex === index ? "is-selected" : ""} onMouseDown={(event) => event.preventDefault()} onClick={() => onItemClick?.(item)}><span>{item.icon}</span><span><b>{item.title}</b><small>{item.subtext}</small></span></button>)}{!items.length && <p>{loadingState === "loading" ? "正在查找…" : "没有匹配的文档，可保留 [[文档名]] 稍后关联。"}</p>}</div>;
+}
+
+export const DocumentEditor = memo(function DocumentEditor({ content, onChange, documents, bindings = [], onSelect }: DocumentEditorProps) {
   const { resolvedTheme } = useTheme();
   const [initial] = useState(() => readBlocks(content));
   const migrationApplied = useRef(false);
+  const [linkError, setLinkError] = useState("");
   const editor = useCreateBlockNote({
     initialContent: initial.blocks,
     dictionary: zh,
@@ -342,25 +353,52 @@ export const DocumentEditor = memo(function DocumentEditor({ content, onChange }
     },
   });
   const bufferedChange = useRef(false);
+  const normalizingLinks = useRef(false);
   const changeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const flushChange = useCallback(() => {
+  const normalizeLinks = useStableCallback(() => {
+    if (normalizingLinks.current) return false;
+    let changed = false;
+    normalizingLinks.current = true;
+    try {
+      const visit = (blocks: typeof editor.document) => {
+        for (const block of blocks) {
+          if (block.type !== "codeBlock" && Array.isArray(block.content)) {
+            const next = linkifyInlineContent(block.content, documents, bindings);
+            if (JSON.stringify(next) !== JSON.stringify(block.content)) { editor.updateBlock(block, { content: next } as never); changed = true; }
+          }
+          if (block.children?.length) visit(block.children);
+        }
+      };
+      visit(editor.document);
+    } finally { normalizingLinks.current = false; }
+    return changed;
+  });
+  const flushChange = useStableCallback(() => {
     if (changeTimer.current) clearTimeout(changeTimer.current);
     changeTimer.current = null;
     if (!bufferedChange.current) return;
     bufferedChange.current = false;
+    normalizeLinks();
     onChange(JSON.stringify(editor.document));
-  }, [editor, onChange]);
+  });
   const scheduleChange = useCallback(() => {
+    if (normalizingLinks.current) return;
     bufferedChange.current = true;
     // Serialize at most once per 160 ms, even during uninterrupted typing.
     if (!changeTimer.current) changeTimer.current = setTimeout(flushChange, 160);
   }, [flushChange]);
   useEffect(() => {
+    const frame = window.requestAnimationFrame(() => { if (normalizeLinks()) onChange(JSON.stringify(editor.document)); });
+    return () => window.cancelAnimationFrame(frame);
+  }, [editor, documents, bindings, normalizeLinks, onChange]);
+  useEffect(() => {
     const onHidden = () => { if (document.hidden) flushChange(); };
     window.addEventListener("pagehide", flushChange);
+    window.addEventListener("zhiyu:flush-editor", flushChange);
     document.addEventListener("visibilitychange", onHidden);
     return () => {
       window.removeEventListener("pagehide", flushChange);
+      window.removeEventListener("zhiyu:flush-editor", flushChange);
       document.removeEventListener("visibilitychange", onHidden);
       flushChange();
     };
@@ -394,7 +432,14 @@ export const DocumentEditor = memo(function DocumentEditor({ content, onChange }
   }, [editor]);
 
   return (
-    <BlockNoteView
+    <div className="doc-editor-linked" onClickCapture={(event) => {
+      const anchor = (event.target as HTMLElement).closest<HTMLAnchorElement>("a[href]");
+      const id = anchor ? linkedDocumentId(anchor.getAttribute("href") || "") : null;
+      if (!id || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+      event.preventDefault(); event.stopPropagation(); flushChange();
+      if (documents.some((document) => document.id === id)) { setLinkError(""); onSelect(id); }
+      else setLinkError("这篇文档已删除或不可用。");
+    }}>{linkError && <p className="doc-knowledge-error" role="alert">{linkError}</p>}<BlockNoteView
       editor={editor}
       theme={resolvedTheme}
       sideMenu={false}
@@ -406,6 +451,10 @@ export const DocumentEditor = memo(function DocumentEditor({ content, onChange }
         triggerCharacter="/"
         suggestionMenuComponent={CompactSuggestionMenu}
       />
-    </BlockNoteView>
+      <SuggestionMenuController triggerCharacter="[[" suggestionMenuComponent={WikiSuggestionMenu} getItems={async (query): Promise<DefaultReactSuggestionItem[]> => documents.filter((document) => document.title.toLocaleLowerCase().includes(query.replace(/\]\]$/, "").trim().toLocaleLowerCase())).slice(0,30).map((document) => ({
+        title: document.title, icon: <span>{document.icon || "📄"}</span>, subtext: `${document.parentId ? documents.find((parent) => parent.id === document.parentId)?.title || "子文档" : "顶级文档"} · ${document.id.slice(0,6)}`,
+        onItemClick: () => { editor.insertInlineContent([{ type: "link", href: documentHref(document.id), content: `[[${document.title}]]` }, " "]); },
+      }))} />
+    </BlockNoteView></div>
   );
 });

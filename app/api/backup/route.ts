@@ -8,12 +8,18 @@ export const dynamic = "force-dynamic";
 const backupSchema = z.object({
   format: z.string().optional(),
   version: z.number().optional(),
+  exportedAt: z.iso.datetime().optional(),
   documents: z.array(z.object({
     id: z.string(), parentId: z.string().nullable(), title: z.string(), icon: z.string().nullable(),
     tags: z.array(z.string()).optional().default([]), content: z.string(), plainText: z.string().optional().default(""),
     sortOrder: z.number(), isPinned: z.boolean(), isDeleted: z.boolean(), createdAt: z.string(), updatedAt: z.string(), deletedAt: z.string().nullable(),
   })).max(10000),
   settings: z.record(z.string(), z.string()).optional(),
+  reviews: z.array(z.object({
+    document_id: z.string(), stage: z.number().int().min(0).max(7), due_at: z.iso.datetime(),
+    last_reviewed_at: z.iso.datetime().nullable(), review_count: z.number().int().nonnegative(), version: z.number().int().positive(),
+  })).max(10000).optional(),
+  links: z.array(z.object({ source_id: z.string(), reference_key: z.string(), target_id: z.string().nullable(), target_title: z.string() })).max(100000).optional(),
 }).strict();
 
 const downloadName = (title: string, extension: "json" | "md") => {

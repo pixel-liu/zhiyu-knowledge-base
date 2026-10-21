@@ -64,7 +64,7 @@ export function useDocumentLibrary(onLoaded: (items: DocumentSummary[]) => void)
         delete metadata.content;
         return { ...item, ...metadata };
       }));
-      const saved = window.localStorage.getItem("knowledge-desk:selected");
+      const saved = new URLSearchParams(window.location.search).get("document") || window.localStorage.getItem("knowledge-desk:selected");
       setSelectedId((current) => items.some((item) => item.id === current) ? current : items.find((item) => item.id === saved)?.id ?? items[0]?.id ?? null);
       setStatus(queue.hasPending ? "正在保存" : "已自动保存");
       onLoaded(items);
@@ -130,6 +130,11 @@ export function useDocumentLibrary(onLoaded: (items: DocumentSummary[]) => void)
     setSelectedId(id);
   }, [selectedId]);
 
+  const flushSaves = useCallback(async () => {
+    window.dispatchEvent(new Event("zhiyu:flush-editor"));
+    return await queue.flush() && !queue.hasPending;
+  }, [queue]);
+
   return { documents, setDocuments, selected, selectedId, setSelectedId: selectDocument, initialContent: opened && opened.id === activeId ? opened.content : null,
-    status, setStatus, error, setError, loadDocuments, save, updateLocal, rememberDocument, discardDocuments };
+    status, setStatus, error, setError, loadDocuments, save, updateLocal, rememberDocument, discardDocuments, flushSaves };
 }

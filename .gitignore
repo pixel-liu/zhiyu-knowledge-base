@@ -31,6 +31,9 @@ preview*.log
 /data/knowledge.db
 /data/knowledge.db-shm
 /data/knowledge.db-wal
+/data/auth.db
+/data/auth.db-shm
+/data/auth.db-wal
 /data/*.repair-backup.json
 /public/uploads/
 

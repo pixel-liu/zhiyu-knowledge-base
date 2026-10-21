@@ -40,7 +40,7 @@ function fingerprint() {
   };
   for (const directory of ["app", "components", "hooks", "lib", "public", "styles"]) visit(directory);
   for (const name of readdirSync(root).sort()) {
-    if (/^(package(?:-lock)?\.json|next\.config\.[cm]?[jt]s|tsconfig\.json|postcss\.config\.[cm]?[jt]s|tailwind\.config\.[cm]?[jt]s|\.env(?:\..+)?)$/.test(name) && !name.startsWith(".env.development")) {
+    if (/^(package(?:-lock)?\.json|proxy\.[cm]?[jt]s|next\.config\.[cm]?[jt]s|tsconfig\.json|postcss\.config\.[cm]?[jt]s|tailwind\.config\.[cm]?[jt]s|\.env(?:\..+)?)$/.test(name) && !name.startsWith(".env.development")) {
       hash.update(name).update("\0").update(readFileSync(join(root, name))).update("\0");
     }
   }

@@ -3,6 +3,8 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { DocumentRecord, DocumentSummary } from "./document-types";
+import { initializeKnowledgeTables, resolveUnboundLinks, syncDocumentLinks } from "./document-link-index";
+import { remapDocumentLinks } from "./document-links";
 export type { DocumentRecord } from "./document-types";
 
 type DocumentRow = {
@@ -93,7 +95,7 @@ function contentToText(content: string) {
   }
 }
 
-function getDatabase() {
+export function getDatabase() {
   if (database) return database;
 
   mkdirSync(dataDirectory, { recursive: true });
@@ -147,6 +149,7 @@ function getDatabase() {
 
   const count = db.prepare("SELECT COUNT(*) AS count FROM documents").get() as { count: number };
   if (!count.count) migrateLegacyNotes(db);
+  initializeKnowledgeTables(db);
   database = db;
   return db;
 }
@@ -241,6 +244,8 @@ export function createDocument(input: { parentId?: string | null; title?: string
     updatedAt: timestamp,
     deletedAt: null,
   };
+  db.exec("BEGIN");
+  try {
   db.prepare(`
     INSERT INTO documents (id, parent_id, title, icon, tags, content, plain_text, sort_order, is_pinned, is_deleted, created_at, updated_at, deleted_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, NULL)
@@ -249,6 +254,10 @@ export function createDocument(input: { parentId?: string | null; title?: string
     document.plainText, document.sortOrder, document.createdAt, document.updatedAt
   );
   refreshSearchIndex(db, document);
+  syncDocumentLinks(db, document.id, document.content);
+  resolveUnboundLinks(db);
+  db.exec("COMMIT");
+  } catch (error) { db.exec("ROLLBACK"); throw error; }
   return document;
 }
 
@@ -292,6 +301,8 @@ export function updateDocument(id: string, patch: Partial<Pick<DocumentRecord, "
     db.prepare(`UPDATE documents SET ${changes.map(([column]) => `${column} = ?`).join(", ")} WHERE id = ?`)
       .run(...changes.map(([, value]) => value), id);
     if (contentChanged || document.title !== existing.title) refreshSearchIndex(db, document);
+    if (contentChanged) syncDocumentLinks(db, id, document.content);
+    if (contentChanged || document.title !== existing.title) resolveUnboundLinks(db);
     db.exec("COMMIT");
   } catch (cause) { db.exec("ROLLBACK"); throw cause; }
   return document;
@@ -322,6 +333,7 @@ export function softDeleteDocument(id: string) {
       update.run(deletedAt, deletedAt, documentId);
       db.prepare("DELETE FROM documents_fts WHERE document_id = ?").run(documentId);
     }
+    resolveUnboundLinks(db);
     db.exec("COMMIT");
   } catch (error) {
     db.exec("ROLLBACK");
@@ -348,6 +360,7 @@ export function restoreDocument(id: string) {
   db.exec("BEGIN");
   try {
     for (const documentId of restoreIds) update.run(restoredAt, documentId);
+    resolveUnboundLinks(db);
     db.exec("COMMIT");
   } catch (error) {
     db.exec("ROLLBACK");
@@ -449,7 +462,9 @@ export function exportBackup(documentId?: string) {
     : db.prepare("SELECT * FROM documents ORDER BY parent_id, sort_order, created_at").all()) as unknown as DocumentRow[];
   const documents = rows.map(toRecord);
   const settings = Object.fromEntries((db.prepare("SELECT key, value FROM settings").all() as Array<{ key: string; value: string }>).map((item) => [item.key, item.value]));
-  return { format: "zhiyu-backup", version: 1, exportedAt: now(), documents, settings };
+  const reviews = (db.prepare("SELECT * FROM document_reviews").all() as unknown as BackupReview[]).filter((review) => documents.some((document) => document.id === review.document_id));
+  const links = (db.prepare("SELECT * FROM document_links").all() as unknown as BackupLink[]).filter((link) => documents.some((document) => document.id === link.source_id));
+  return { format: "zhiyu-backup", version: 2, exportedAt: now(), documents, settings, reviews, links };
 }
 
 type MarkdownBlock = {
@@ -509,9 +524,13 @@ export function exportMarkdown(documentId?: string) {
     .map((document) => `# ${document.title}\n\n${contentToMarkdown(document.content, document.plainText || "")}\n`)
     .join("\n---\n\n");
 }
+export type BackupReview = { document_id: string; stage: number; due_at: string; last_reviewed_at: string | null; review_count: number; version: number };
+type BackupLink = { source_id: string; reference_key: string; target_id: string | null; target_title: string };
 type BackupInput = {
   documents: Array<Pick<DocumentRecord, "id" | "parentId" | "title" | "icon" | "tags" | "content" | "plainText" | "sortOrder" | "isPinned" | "isDeleted" | "createdAt" | "updatedAt" | "deletedAt">>;
   settings?: Record<string, string>;
+  reviews?: BackupReview[];
+  links?: BackupLink[];
 };
 
 export function importBackup(input: BackupInput) {
@@ -524,13 +543,34 @@ export function importBackup(input: BackupInput) {
   `);
   db.exec("BEGIN");
   try {
+    // Validate parent links at commit so children may appear before parents in a backup.
+    db.exec("PRAGMA defer_foreign_keys = ON");
     for (const source of input.documents) {
-      const content = source.content || emptyContent();
+      const content = remapDocumentLinks(source.content || emptyContent(), ids);
       insert.run(ids.get(source.id)!, source.parentId ? ids.get(source.parentId) ?? null : null, source.title || "未命名文档", source.icon || "📄", JSON.stringify(parseTags(JSON.stringify(source.tags))), content, source.plainText || contentToText(content), Number(source.sortOrder) || 0, source.isPinned ? 1 : 0, source.isDeleted ? 1 : 0, source.createdAt || now(), source.updatedAt || now(), source.deletedAt || null);
     }
     if (input.settings) {
       const setting = db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`);
-      Object.entries(input.settings).forEach(([key, value]) => setting.run(key, String(value), now()));
+      Object.entries(input.settings).filter(([key]) => key !== "document-links-version").forEach(([key, value]) => setting.run(key, String(value), now()));
+    }
+    for (const source of input.documents) {
+      const id = ids.get(source.id)!;
+      const document = getDocument(id);
+      if (document) syncDocumentLinks(db, id, document.content);
+    }
+    resolveUnboundLinks(db);
+    const bindLink = db.prepare("UPDATE document_links SET target_id = ? WHERE source_id = ? AND reference_key = ?");
+    for (const link of input.links ?? []) {
+      const sourceId = ids.get(link.source_id);
+      if (!sourceId || !link.target_id) continue;
+      const targetId = ids.get(link.target_id) ?? link.target_id;
+      const key = link.reference_key.startsWith("id:") ? `id:${targetId}` : link.reference_key;
+      bindLink.run(targetId, sourceId, key);
+    }
+    const insertReview = db.prepare("INSERT INTO document_reviews (document_id, stage, due_at, last_reviewed_at, review_count, version) VALUES (?, ?, ?, ?, ?, ?)");
+    for (const review of input.reviews ?? []) {
+      const id = ids.get(review.document_id);
+      if (id) insertReview.run(id, review.stage, review.due_at, review.last_reviewed_at, review.review_count, review.version);
     }
     db.exec("COMMIT");
   } catch (error) {
