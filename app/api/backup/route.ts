@@ -20,6 +20,10 @@ const backupSchema = z.object({
     last_reviewed_at: z.iso.datetime().nullable(), review_count: z.number().int().nonnegative(), version: z.number().int().positive(),
   })).max(10000).optional(),
   links: z.array(z.object({ source_id: z.string(), reference_key: z.string(), target_id: z.string().nullable(), target_title: z.string() })).max(100000).optional(),
+  versions: z.array(z.object({
+    id: z.string(), document_id: z.string(), title: z.string(), content: z.string().max(10_000_000),
+    plain_text: z.string(), created_at: z.iso.datetime(),
+  })).max(600000).optional(),
 }).strict();
 
 const downloadName = (title: string, extension: "json" | "md") => {

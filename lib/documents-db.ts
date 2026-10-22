@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import type { DocumentRecord, DocumentSummary } from "./document-types";
 import { initializeKnowledgeTables, resolveUnboundLinks, syncDocumentLinks } from "./document-link-index";
 import { remapDocumentLinks } from "./document-links";
+import { initializeDocumentVersions, recordDocumentVersion } from "./document-versions";
 export type { DocumentRecord } from "./document-types";
 
 type DocumentRow = {
@@ -150,6 +151,7 @@ export function getDatabase() {
   const count = db.prepare("SELECT COUNT(*) AS count FROM documents").get() as { count: number };
   if (!count.count) migrateLegacyNotes(db);
   initializeKnowledgeTables(db);
+  initializeDocumentVersions(db);
   database = db;
   return db;
 }
@@ -256,12 +258,13 @@ export function createDocument(input: { parentId?: string | null; title?: string
   refreshSearchIndex(db, document);
   syncDocumentLinks(db, document.id, document.content);
   resolveUnboundLinks(db);
+  recordDocumentVersion(db, { documentId: document.id, title: document.title, content: document.content, plainText: document.plainText, createdAt: document.updatedAt });
   db.exec("COMMIT");
   } catch (error) { db.exec("ROLLBACK"); throw error; }
   return document;
 }
 
-export function updateDocument(id: string, patch: Partial<Pick<DocumentRecord, "title" | "icon" | "content" | "parentId" | "isPinned" | "tags">>) {
+export function updateDocument(id: string, patch: Partial<Pick<DocumentRecord, "title" | "icon" | "content" | "parentId" | "isPinned" | "tags">>, options: { forceVersion?: boolean } = {}) {
   const db = getDatabase();
   const existing = getDocument(id);
   if (!existing || existing.isDeleted) return null;
@@ -303,6 +306,7 @@ export function updateDocument(id: string, patch: Partial<Pick<DocumentRecord, "
     if (contentChanged || document.title !== existing.title) refreshSearchIndex(db, document);
     if (contentChanged) syncDocumentLinks(db, id, document.content);
     if (contentChanged || document.title !== existing.title) resolveUnboundLinks(db);
+    if (contentChanged || document.title !== existing.title) recordDocumentVersion(db, { documentId: document.id, title: document.title, content: document.content, plainText: document.plainText, createdAt: document.updatedAt }, options.forceVersion);
     db.exec("COMMIT");
   } catch (cause) { db.exec("ROLLBACK"); throw cause; }
   return document;
@@ -464,7 +468,8 @@ export function exportBackup(documentId?: string) {
   const settings = Object.fromEntries((db.prepare("SELECT key, value FROM settings").all() as Array<{ key: string; value: string }>).map((item) => [item.key, item.value]));
   const reviews = (db.prepare("SELECT * FROM document_reviews").all() as unknown as BackupReview[]).filter((review) => documents.some((document) => document.id === review.document_id));
   const links = (db.prepare("SELECT * FROM document_links").all() as unknown as BackupLink[]).filter((link) => documents.some((document) => document.id === link.source_id));
-  return { format: "zhiyu-backup", version: 2, exportedAt: now(), documents, settings, reviews, links };
+  const versions = (db.prepare("SELECT * FROM document_versions ORDER BY created_at").all() as unknown as BackupVersion[]).filter((version) => documents.some((document) => document.id === version.document_id));
+  return { format: "zhiyu-backup", version: 3, exportedAt: now(), documents, settings, reviews, links, versions };
 }
 
 type MarkdownBlock = {
@@ -526,11 +531,13 @@ export function exportMarkdown(documentId?: string) {
 }
 export type BackupReview = { document_id: string; stage: number; due_at: string; last_reviewed_at: string | null; review_count: number; version: number };
 type BackupLink = { source_id: string; reference_key: string; target_id: string | null; target_title: string };
+type BackupVersion = { id: string; document_id: string; title: string; content: string; plain_text: string; created_at: string };
 type BackupInput = {
   documents: Array<Pick<DocumentRecord, "id" | "parentId" | "title" | "icon" | "tags" | "content" | "plainText" | "sortOrder" | "isPinned" | "isDeleted" | "createdAt" | "updatedAt" | "deletedAt">>;
   settings?: Record<string, string>;
   reviews?: BackupReview[];
   links?: BackupLink[];
+  versions?: BackupVersion[];
 };
 
 export function importBackup(input: BackupInput) {
@@ -571,6 +578,17 @@ export function importBackup(input: BackupInput) {
     for (const review of input.reviews ?? []) {
       const id = ids.get(review.document_id);
       if (id) insertReview.run(id, review.stage, review.due_at, review.last_reviewed_at, review.review_count, review.version);
+    }
+    const insertVersion = db.prepare("INSERT INTO document_versions (id, document_id, title, content, plain_text, created_at) VALUES (?, ?, ?, ?, ?, ?)");
+    for (const version of input.versions ?? []) {
+      const id = ids.get(version.document_id);
+      if (id) insertVersion.run(crypto.randomUUID(), id, version.title, remapDocumentLinks(version.content, ids), version.plain_text, version.created_at);
+    }
+    const versionedDocuments = new Set((input.versions ?? []).map((version) => version.document_id));
+    for (const source of input.documents) if (!versionedDocuments.has(source.id)) {
+      const id = ids.get(source.id)!;
+      const document = getDocument(id);
+      if (document) recordDocumentVersion(db, { documentId: id, title: document.title, content: document.content, plainText: document.plainText, createdAt: document.updatedAt }, true);
     }
     db.exec("COMMIT");
   } catch (error) {

@@ -135,6 +135,13 @@ export function useDocumentLibrary(onLoaded: (items: DocumentSummary[]) => void)
     return await queue.flush() && !queue.hasPending;
   }, [queue]);
 
+  const applyServerDocument = useCallback((document: DocumentRecord) => {
+    const summary = rememberDocument(document);
+    setDocuments((items) => items.map((item) => item.id === document.id ? summary : item));
+    setOpened({ id: document.id, content: document.content });
+    setStatus("已恢复历史版本");
+  }, [rememberDocument]);
+
   return { documents, setDocuments, selected, selectedId, setSelectedId: selectDocument, initialContent: opened && opened.id === activeId ? opened.content : null,
-    status, setStatus, error, setError, loadDocuments, save, updateLocal, rememberDocument, discardDocuments, flushSaves };
+    status, setStatus, error, setError, loadDocuments, save, updateLocal, rememberDocument, discardDocuments, flushSaves, applyServerDocument };
 }
