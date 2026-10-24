@@ -14,17 +14,23 @@ export type KnowledgeAnswer = {
   matchedDocuments: number;
 };
 
+export type InterviewEngine = "ai" | "local";
+
 export type InterviewQuestion = {
   id: string;
   documentId: string;
   documentTitle: string;
   icon: string | null;
   prompt: string;
+  referenceAnswer: string;
+  explanation: string;
   source: string;
   heading: string | null;
   blockIndex: number;
   keywords: string[];
   depth: number;
+  engine: InterviewEngine;
+  model: string | null;
 };
 
 export type InterviewFeedback = {
@@ -33,6 +39,24 @@ export type InterviewFeedback = {
   omissions: string[];
   message: string;
   followUp: InterviewQuestion | null;
+  engine: InterviewEngine;
+  model: string | null;
+  notice: string | null;
+};
+
+export type InterviewSession = {
+  questions: InterviewQuestion[];
+  engine: InterviewEngine;
+  model: string | null;
+  notice: string | null;
+};
+
+export type InterviewFollowUpTurn = { question: string; answer: string };
+
+export type InterviewFollowUp = {
+  answer: string;
+  model: string | null;
+  notice: string | null;
 };
 
 export type HealthIssueKind = "duplicate-title" | "duplicate-content" | "broken-link" | "unexplained" | "ambiguous-link" | "stale-draft";

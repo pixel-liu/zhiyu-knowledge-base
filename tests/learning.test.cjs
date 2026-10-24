@@ -55,6 +55,8 @@ test("knowledge answers cite matching note blocks and interviews identify omissi
   const questions = learning.buildInterview([upload.id]);
   assert.ok(questions.length >= 2);
   assert.equal(questions[0].documentId, upload.id);
+  assert.equal(questions[0].referenceAnswer, questions[0].source, "local questions include a prepared reference answer");
+  assert.equal(questions[0].explanation, "", "does not invent an explanation beyond the document");
   const weak = learning.evaluateInterview(questions[0], "先上传，然后后台处理");
   assert.ok(weak.omissions.length > 0);
   assert.ok(weak.followUp);

@@ -1,15 +1,17 @@
 "use client";
 
 import {
-  BookOpen, ChevronDown, ChevronRight, Download, FilePlus2, FileText, FileUp, GripVertical,
+  ArrowLeft, BookOpen, ChevronDown, ChevronRight, Download, FilePlus2, FileText, FileUp, GripVertical, LayoutGrid,
   ListTree, MoreHorizontal, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Search, Trash2,
-  Moon, PencilLine, Pin, Sun, Undo2, X,
+  Check, Moon, PencilLine, Pin, RotateCcw, Sun, Undo2, X,
 } from "lucide-react";
 import { ChangeEvent as ReactChangeEvent, CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DndContext, DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import dynamic from "next/dynamic";
+import Link from "next/link";
+import type { StudyStatus } from "@/lib/knowledge-types";
 import type { DocumentRecord, DocumentSummary } from "@/lib/document-types";
 import { indexDocumentTree, documentParentOptions } from "@/lib/document-tree";
 import { useDocumentLibrary } from "@/hooks/use-document-library";
@@ -18,7 +20,10 @@ import { LogoutButton } from "@/components/logout-button";
 import { DocumentKnowledgePanel } from "@/components/document-knowledge";
 import { ReviewCenter } from "@/components/review-center";
 import { KnowledgeLab } from "@/components/knowledge-lab";
+import { KnowledgeHome } from "@/components/knowledge-home";
+import { toolLabels, workspaceView, type WorkspaceView } from "@/lib/workspace-navigation";
 import { useDocumentKnowledge } from "@/hooks/use-document-knowledge";
+import "@/components/workspace-navigation.css";
 
 const loadDocumentEditor = () => import("@/components/document-editor");
 const DocumentEditor = dynamic(() => loadDocumentEditor().then((module) => module.DocumentEditor), {
@@ -126,7 +131,8 @@ const DocumentTree = memo(function DocumentTreeLevel({ childrenByParent, parentI
   );
 });
 
-export function KnowledgeDesk() {
+export function KnowledgeDesk({ initialView = "home" }: { initialView?: WorkspaceView }) {
+  const [view, setView] = useState<WorkspaceView>(initialView);
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [expanded, setExpanded] = useState(() => new Set<string>());
@@ -172,6 +178,9 @@ export function KnowledgeDesk() {
   const knowledge = useDocumentKnowledge(selected?.id, selected?.updatedAt, status);
   const [reviewRevision, setReviewRevision] = useState(0);
   const reviewChanged = useCallback(() => { setReviewRevision((value) => value + 1); knowledge.refresh(); }, [knowledge.refresh]);
+  const changeReviewStatus = async (status: StudyStatus | "off") => {
+    if (await knowledge.changeReviewStatus(status)) setReviewRevision((value) => value + 1);
+  };
   const tags = useMemo(() => [...new Set(documents.flatMap((item) => item.tags || []))].sort((a, b) => a.localeCompare(b, "zh-CN")), [documents]);
   const childrenByParent = useMemo(() => indexDocumentTree(documents), [documents]);
   const parentOptions = useMemo(() => documentParentOptions(documents, childrenByParent), [documents, childrenByParent]);
@@ -291,16 +300,19 @@ export function KnowledgeDesk() {
   const choose = useCallback((id: string) => {
     window.dispatchEvent(new Event("zhiyu:flush-editor"));
     const url = new URL(window.location.href);
-    if (url.searchParams.get("document") !== id) {
+    if (url.searchParams.get("document") !== id || url.pathname !== "/documents") {
       if (!url.searchParams.has("document") && activeDocumentId) {
         url.searchParams.set("document", activeDocumentId); window.history.replaceState({}, "", url.pathname + url.search);
       }
+      url.pathname = "/documents";
       url.searchParams.set("document", id); window.history.pushState({}, "", url.pathname + url.search);
     }
+    setView("documents");
     setSelectedId(id); setTagDraft(""); setSearchOpen(false); setTrashOpen(false);
   }, [setSelectedId, activeDocumentId]);
   useEffect(() => {
     const onBack = () => {
+      setView(workspaceView(window.location.pathname, window.location.search));
       const id = new URLSearchParams(window.location.search).get("document");
       if (id && documents.some((document) => document.id === id)) {
         window.dispatchEvent(new Event("zhiyu:flush-editor")); setSelectedId(id);
@@ -309,6 +321,27 @@ export function KnowledgeDesk() {
     window.addEventListener("popstate", onBack);
     return () => window.removeEventListener("popstate", onBack);
   }, [documents, setSelectedId]);
+
+  const navigate = async (event: ReactMouseEvent<HTMLAnchorElement>, href: string) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    if (!await flushSaves()) { setError("文档尚未保存成功，请稍后再切换页面。"); return; }
+    const url = new URL(href, window.location.origin);
+    if (url.pathname.startsWith("/tools/") && selectedId) url.searchParams.set("document", selectedId);
+    window.history.pushState({}, "", url.pathname + url.search);
+    setView(workspaceView(url.pathname, url.search));
+    const id = url.searchParams.get("document");
+    if (id && documents.some((item) => item.id === id)) setSelectedId(id);
+    setMoreOpen(false); setSearchOpen(false); setOutlineTooltip(null);
+    window.scrollTo({ top: 0 });
+  };
+
+  const selectVersionDocument = (id: string) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("document", id);
+    window.history.replaceState({}, "", url.pathname + url.search);
+    setSelectedId(id);
+  };
 
   const addTag = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (event.key !== "Enter" && event.key !== ",") return;
@@ -553,12 +586,14 @@ export function KnowledgeDesk() {
   const darkMode = mounted && resolvedTheme === "dark";
 
   return <div className="docspace">
-    <header className="doc-topbar"><div className="doc-topbar-left"><BookOpen size={19} /><b>知屿文档</b><span>我的文档库</span></div><div className="doc-topbar-actions"><span className={`doc-save-status ${status === "正在保存" ? "saving" : ""}`}><i />{status}</span><button title={mounted ? (darkMode ? "切换为白色模式" : "切换为黑色模式") : "切换主题"} aria-label={mounted ? (darkMode ? "切换为白色模式" : "切换为黑色模式") : "切换主题"} onClick={() => setTheme(darkMode ? "light" : "dark")}>{mounted && darkMode ? <Sun size={18} /> : <Moon size={18} />}</button><button title="搜索" onClick={() => setSearchOpen(true)}><Search size={18} /></button><KnowledgeLab documents={documents} currentId={selected?.id ?? null} beforeOpen={flushSaves} onSelect={(id, blockIndex) => { if (blockIndex !== undefined) setSourceLocation({ id, blockIndex }); choose(id); }} onCreate={(document) => { setDocuments((items) => [...items, rememberDocument(document)]); choose(document.id); }} onRestore={(document) => { applyServerDocument(document); setLiveOutline({ id: document.id, items: headingsFrom(document.content) }); knowledge.refresh(); }} /><ReviewCenter revision={reviewRevision + documents.length} onSelect={choose} onChanged={reviewChanged} beforeOpen={flushSaves} /><button title="回收站" aria-label="回收站" onClick={() => void openTrash()}><Trash2 size={18} /></button><div className="doc-more-wrap"><button title="更多功能" onClick={() => setMoreOpen((value) => !value)}><MoreHorizontal size={19} /></button>{moreOpen && <div className="doc-more-menu" onClick={(event) => event.stopPropagation()}><button onClick={() => requestExport("json")}><span>导出 JSON 备份</span><small>{exportAll ? "完整文档库" : "当前文档"}</small></button><div className="doc-backup-toggle-row"><span>全量备份</span><button type="button" className={`doc-backup-toggle ${exportAll ? "is-on" : ""}`} aria-pressed={exportAll} aria-label={exportAll ? "关闭全量备份" : "开启全量备份"} onClick={(event) => { event.stopPropagation(); setExportAll((value) => !value); }}><span><i /></span></button></div><button onClick={() => requestExport("markdown")}><span>导出 Markdown</span><small>{exportAll ? "完整文档库" : "当前文档"}</small></button><button onClick={() => markdownInput.current?.click()}><span>导入文档</span><small>Markdown / JSON，可选择父级</small></button><button onClick={() => backupInput.current?.click()}><span>导入备份</span><small>合并到当前文档库</small></button></div>}<input ref={markdownInput} className="doc-hidden-input" type="file" accept="text/markdown,application/json,.md,.markdown,.json" onChange={(event) => void selectMarkdownFile(event)} /><input ref={backupInput} className="doc-hidden-input" type="file" accept="application/json,.json" onChange={(event) => void importBackupFile(event)} /></div><LogoutButton beforeLogout={flushSaves} /></div></header>
-    <div className={`doc-layout ${resizingPane ? "is-resizing" : ""}`} style={{ "--sidebar-width": `${sidebarWidth}px`, "--outline-width": `${outlineWidth}px` } as CSSProperties}>
+    <header className="doc-topbar"><div className="doc-topbar-left"><Link prefetch={false} className="workspace-brand" href="/" onClick={(event) => void navigate(event, "/")} aria-label="知屿文档首页"><BookOpen size={19} /><b>知屿文档</b></Link><span>{view === "home" ? "我的知识空间" : view === "documents" ? "我的文档库" : toolLabels[view]}</span>{view !== "home" && <Link prefetch={false} className="workspace-home-link" href="/" onClick={(event) => void navigate(event, "/")}><LayoutGrid size={15} /><span>导航首页</span></Link>}</div><div className="doc-topbar-actions"><span className={`doc-save-status ${status === "正在保存" ? "saving" : ""}`}><i />{status}</span><button title={mounted ? (darkMode ? "切换为白色模式" : "切换为黑色模式") : "切换主题"} aria-label={mounted ? (darkMode ? "切换为白色模式" : "切换为黑色模式") : "切换主题"} onClick={() => setTheme(darkMode ? "light" : "dark")}>{mounted && darkMode ? <Sun size={18} /> : <Moon size={18} />}</button><button title="搜索" onClick={() => setSearchOpen(true)}><Search size={18} /></button><ReviewCenter revision={reviewRevision + documents.length} onSelect={choose} onChanged={reviewChanged} beforeOpen={flushSaves} /><button title="回收站" aria-label="回收站" onClick={() => void openTrash()}><Trash2 size={18} /></button><div className="doc-more-wrap"><button title="更多功能" onClick={() => setMoreOpen((value) => !value)}><MoreHorizontal size={19} /></button>{moreOpen && <div className="doc-more-menu" onClick={(event) => event.stopPropagation()}><button onClick={() => requestExport("json")}><span>导出 JSON 备份</span><small>{exportAll ? "完整文档库" : "当前文档"}</small></button><div className="doc-backup-toggle-row"><span>全量备份</span><button type="button" className={`doc-backup-toggle ${exportAll ? "is-on" : ""}`} aria-pressed={exportAll} aria-label={exportAll ? "关闭全量备份" : "开启全量备份"} onClick={(event) => { event.stopPropagation(); setExportAll((value) => !value); }}><span><i /></span></button></div><button onClick={() => requestExport("markdown")}><span>导出 Markdown</span><small>{exportAll ? "完整文档库" : "当前文档"}</small></button><button onClick={() => markdownInput.current?.click()}><span>导入文档</span><small>Markdown / JSON，可选择父级</small></button><button onClick={() => backupInput.current?.click()}><span>导入备份</span><small>合并到当前文档库</small></button></div>}<input ref={markdownInput} className="doc-hidden-input" type="file" accept="text/markdown,application/json,.md,.markdown,.json" onChange={(event) => void selectMarkdownFile(event)} /><input ref={backupInput} className="doc-hidden-input" type="file" accept="application/json,.json" onChange={(event) => void importBackupFile(event)} /></div><LogoutButton beforeLogout={flushSaves} /></div></header>
+    {view === "home" && <KnowledgeHome documents={documents} loaded={status !== "正在载入"} onNavigate={(event, href) => void navigate(event, href)} />}
+    {view !== "home" && view !== "documents" && <main className="workspace-tool"><nav className="workspace-breadcrumb" aria-label="当前位置"><Link prefetch={false} href="/" onClick={(event) => void navigate(event, "/")}><ArrowLeft size={15} />返回导航</Link><ChevronRight size={13} /><span>{toolLabels[view]}</span></nav><KnowledgeLab key={view} tool={view} documents={documents} currentId={selected?.id ?? null} onCurrentChange={selectVersionDocument} beforeOpen={flushSaves} onSelect={(id, blockIndex) => { if (blockIndex !== undefined) setSourceLocation({ id, blockIndex }); choose(id); }} onCreate={(document) => { setDocuments((items) => [...items, rememberDocument(document)]); choose(document.id); }} onRestore={(document) => { applyServerDocument(document); setLiveOutline({ id: document.id, items: headingsFrom(document.content) }); knowledge.refresh(); }} /></main>}
+    {view === "documents" && <div className={`doc-layout ${resizingPane ? "is-resizing" : ""}`} style={{ "--sidebar-width": `${sidebarWidth}px`, "--outline-width": `${outlineWidth}px` } as CSSProperties}>
       {sidebarOpen && <><aside className="doc-sidebar"><div className="doc-sidebar-tools"><button className="doc-new" onClick={() => create()}><FilePlus2 size={16} />新建文档</button><button className="doc-search" onClick={() => setSearchOpen(true)}><Search size={16} /><span>搜索</span><kbd>Ctrl K</kbd></button></div><div className="doc-sidebar-label"><span>我的文档库</span><span className="doc-sidebar-label-actions"><button onClick={() => create()} title="新建文档"><FilePlus2 size={15} /></button><button onClick={() => setSidebarOpen(false)} title="收起左侧面板" aria-label="收起左侧面板"><PanelLeftClose size={15} /></button></span></div><nav ref={treeRef} className="doc-tree" aria-label="文档树" onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }} onDrop={(event) => { event.preventDefault(); const id = event.dataTransfer.getData("text/plain"); if (id) void moveDocument(id, null); }}><DocumentTree childrenByParent={childrenByParent} selectedId={selected?.id ?? null} expanded={expanded} onSelect={choose} onToggle={toggleExpanded} onNewChild={create} onReorder={reorder} onContextMenu={openContextMenu} onMove={moveDocument} /></nav></aside>{paneDivider("sidebar")}</>}
-      <section className="doc-workbench"><button className="doc-collapse" onClick={() => setSidebarOpen((value) => !value)} title="收起/展开文档库">{sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}</button>{selected ? <main className="doc-canvas"><div className="doc-breadcrumb">我的文档库 <ChevronRight size={14} /> {selected.parentId ? documents.find((item) => item.id === selected.parentId)?.title || "子文档" : "文档"}</div><input ref={titleInput} className="doc-title-input" value={selected.title} onChange={(event) => save(selected.id, { title: event.target.value })} placeholder="未命名文档" aria-label="文档标题" /><div className="doc-meta"><span>{selected.icon || "📄"}</span><span>最后修改：{formatTime(selected.updatedAt)}</span><button onClick={() => requestRemove()}><Trash2 size={15} />移入回收站</button></div><div className="doc-tags"><span className="doc-tags-label">标签</span>{selected.tags.map((tag) => <button type="button" className="doc-tag" key={tag} onClick={() => removeTag(tag)} title="移除标签">#{tag}<X size={11} /></button>)}<input value={tagDraft} onChange={(event) => setTagDraft(event.target.value)} onKeyDown={addTag} placeholder="输入标签后按回车" aria-label="添加标签" /></div><div className="doc-editor" id="document-editor">{initialContent === null ? <p className="doc-body-loading" role="status">正在加载文档…</p> : <DocumentEditor key={selected.id} content={initialContent} onChange={onEditorChange} documents={documents} bindings={knowledge.data?.connections.outgoing} onSelect={choose} />}</div><DocumentKnowledgePanel key={selected.id} id={selected.id} data={knowledge.data} error={knowledge.error} onSelect={choose} onRefresh={knowledge.refresh} onReviewChange={reviewChanged} /></main> : <main className="doc-empty"><FileText size={34} /><h1>创建第一篇文档</h1><p>从左侧新建文档，内容会自动保存到本机。</p><button className="doc-new" onClick={() => create()}><FilePlus2 size={16} />新建文档</button></main>}</section>
+<section className="doc-workbench"><button className="doc-collapse" onClick={() => setSidebarOpen((value) => !value)} title="收起/展开文档库">{sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}</button>{selected ? <main className="doc-canvas"><div className="doc-breadcrumb">我的文档库 <ChevronRight size={14} /> {selected.parentId ? documents.find((item) => item.id === selected.parentId)?.title || "子文档" : "文档"}</div><div className="doc-title-row"><input ref={titleInput} className="doc-title-input" value={selected.title} onChange={(event) => save(selected.id, { title: event.target.value })} placeholder="未命名文档" aria-label="文档标题" /><div className="doc-header-actions" role="group" aria-label="文档操作"><button type="button" className={`doc-add-review${knowledge.data?.review ? " is-enrolled" : ""}`} disabled={!knowledge.data || knowledge.reviewBusy || Boolean(knowledge.data.review)} onClick={() => void changeReviewStatus("learning")}>{knowledge.data?.review ? <Check size={16} /> : <RotateCcw size={16} />}<span>{knowledge.reviewBusy ? "加入中…" : knowledge.data?.review ? "已加入复习" : "加入复习"}</span></button><button type="button" className="doc-move-to-trash" onClick={() => requestRemove()}><Trash2 size={15} /><span>移入回收站</span></button></div></div>{knowledge.reviewError && <p className="doc-knowledge-error" role="alert">{knowledge.reviewError}<button type="button" disabled={knowledge.reviewBusy} onClick={() => void changeReviewStatus(knowledge.failedReviewStatus ?? "learning")}>重试</button></p>}<div className="doc-meta"><span>{selected.icon || "📄"}</span><span>最后修改：{formatTime(selected.updatedAt)}</span></div><div className="doc-tags"><span className="doc-tags-label">标签</span>{selected.tags.map((tag) => <button type="button" className="doc-tag" key={tag} onClick={() => removeTag(tag)} title="移除标签">#{tag}<X size={11} /></button>)}<input value={tagDraft} onChange={(event) => setTagDraft(event.target.value)} onKeyDown={addTag} placeholder="输入标签后按回车" aria-label="添加标签" /></div><div className="doc-editor" id="document-editor">{initialContent === null ? <p className="doc-body-loading" role="status">正在加载文档…</p> : <DocumentEditor key={selected.id} content={initialContent} onChange={onEditorChange} documents={documents} bindings={knowledge.data?.connections.outgoing} onSelect={choose} />}</div><DocumentKnowledgePanel key={selected.id} data={knowledge.data} error={knowledge.error} busy={knowledge.reviewBusy} onSelect={choose} onRefresh={knowledge.refresh} onStatusChange={changeReviewStatus} /></main> : <main className="doc-empty"><FileText size={34} /><h1>创建第一篇文档</h1><p>从左侧新建文档，内容会自动保存到本机。</p><button className="doc-new" onClick={() => create()}><FilePlus2 size={16} />新建文档</button></main>}</section>
       {selected && <>{outlineOpen && paneDivider("outline")}<aside className={`doc-outline ${outlineOpen ? "" : "is-collapsed"}`}><div className="doc-outline-title"><span>大纲</span><button onClick={() => setOutlineOpen((value) => !value)} title={outlineOpen ? "收起右侧目录" : "展开右侧目录"} aria-label={outlineOpen ? "收起右侧目录" : "展开右侧目录"}>{outlineOpen ? <PanelRightClose size={19} /> : <PanelRightOpen size={19} />}</button></div>{outlineOpen && (outline.length ? <nav>{outline.map((item) => <a key={item.id} className={`outline-level-${item.level} ${activeOutlineId === item.id ? "is-active" : ""}`} href="#document-editor" aria-label={item.text} onMouseEnter={(event) => { const rect = event.currentTarget.getBoundingClientRect(); setOutlineTooltip({ text: item.text, x: rect.left + rect.width / 2, y: rect.top - 8 }); }} onMouseLeave={() => setOutlineTooltip(null)} onClick={(event) => { event.preventDefault(); setOutlineTooltip(null); setActiveOutlineId(item.id); document.querySelectorAll("#document-editor [data-content-type='heading']")[item.headingIndex]?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>{item.text}</a>)}</nav> : <p>为正文添加标题后，会在这里显示文档大纲。</p>)}</aside></>}
-    </div>
+    </div>}
     {error && <div className="doc-toast">{error}<button onClick={() => setError("")}><X size={15} /></button></div>}
     {moveConfirm && <AlertDialog open onOpenChange={(open) => { if (!open) setMoveConfirm(null); }}>
       <AlertDialogContent className="doc-confirm-modal doc-move-confirm-modal">

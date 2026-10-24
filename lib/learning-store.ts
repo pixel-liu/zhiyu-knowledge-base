@@ -1,5 +1,6 @@
 import { getDocument, getDatabase, listDocuments } from "./documents-db";
 import { getDocumentVersion, listDocumentVersions } from "./document-versions";
+import { interviewMaterials, interviewPrompt } from "./interview-material";
 import type { HealthIssue, InterviewFeedback, InterviewQuestion, KnowledgeAnswer, KnowledgeCitation, KnowledgeHealth, VersionSummary } from "./learning-types";
 
 type Block = { type?: string; props?: { level?: number }; content?: unknown; children?: Block[] };
@@ -80,7 +81,7 @@ export function answerFromNotes(query: string): KnowledgeAnswer {
   return { answer, citations, matchedDocuments: new Set(citations.map((item) => item.documentId)).size };
 }
 
-function questionKeywords(chunk: Chunk) {
+function questionKeywords(chunk: { heading: string | null; text: string }) {
   const frequency = new Map<string, number>();
   for (const word of tokenize(`${chunk.heading ?? ""} ${chunk.text}`)) frequency.set(word, (frequency.get(word) ?? 0) + 1);
   return [...frequency.entries()].sort((a, b) => b[1] - a[1] || b[0].length - a[0].length).slice(0, 8).map(([word]) => word);
@@ -89,23 +90,23 @@ function questionKeywords(chunk: Chunk) {
 export function buildInterview(documentIds: string[]): InterviewQuestion[] {
   const wanted = new Set(documentIds);
   const questions: InterviewQuestion[] = [];
+  const pools: InterviewQuestion[][] = [];
   for (const document of listDocuments(false).filter((item) => wanted.has(item.id))) {
-    const chunks = chunksFor(document).filter((item) => item.text.length >= 16);
-    const preferred = chunks.filter((item) => item.heading).length ? chunks.filter((item) => item.heading) : chunks;
-    const usedHeadings = new Set<string>();
-    for (const chunk of preferred) {
-      const topic = chunk.heading || excerpt(chunk.text, 28).replace(/[。；，,.].*$/u, "");
-      if (usedHeadings.has(topic)) continue;
-      usedHeadings.add(topic);
+    const pool: InterviewQuestion[] = [];
+    for (const chunk of interviewMaterials(document.content, document.plainText)) {
       const keywords = questionKeywords(chunk);
       if (!keywords.length) continue;
-      questions.push({ id: crypto.randomUUID(), documentId: document.id, documentTitle: document.title, icon: document.icon,
-        prompt: `请结合《${document.title}》说明“${topic}”的核心内容、适用场景和关键注意点。`, source: excerpt(chunk.text, 360), heading: chunk.heading,
-        blockIndex: chunk.blockIndex, keywords, depth: 1 });
-      if (questions.filter((item) => item.documentId === document.id).length >= 3) break;
+      pool.push({ id: crypto.randomUUID(), documentId: document.id, documentTitle: document.title, icon: document.icon,
+        prompt: interviewPrompt(chunk.heading, keywords), source: chunk.text, heading: chunk.heading,
+        referenceAnswer: chunk.text, explanation: "",
+        blockIndex: chunk.blockIndex, keywords, depth: 1, engine: "local", model: null });
     }
+    pools.push(pool);
   }
-  return questions.slice(0, 12);
+  for (let index = 0; questions.length < 12 && pools.some((pool) => pool[index]); index += 1) {
+    for (const pool of pools) { if (pool[index]) questions.push(pool[index]); if (questions.length === 12) break; }
+  }
+  return questions;
 }
 
 export function evaluateInterview(question: InterviewQuestion, answer: string): InterviewFeedback {
@@ -116,7 +117,7 @@ export function evaluateInterview(question: InterviewQuestion, answer: string): 
   const message = coverage >= 75 ? "回答覆盖了大部分关键点，可以继续下一题。" : coverage >= 40 ? "方向基本正确，但还有几个关键点值得补充。" : "回答与笔记中的关键内容重合较少，建议先看遗漏点再追问。";
   const followUp = omissions.length && question.depth < 3 ? { ...question, id: crypto.randomUUID(), depth: question.depth + 1,
     prompt: `继续追问：请具体说明“${omissions.slice(0, 2).join("”和“")}”在这个主题中的作用。`, keywords: omissions.slice(0, 5) } : null;
-  return { coverage, matched, omissions, message, followUp };
+  return { coverage, matched, omissions, message, followUp, engine: "local", model: null, notice: null };
 }
 
 export function inspectKnowledgeHealth(): KnowledgeHealth {
