@@ -1,12 +1,13 @@
 "use client";
 
 import {
-  AlertTriangle, ArrowRight, CheckCircle2, FileClock, History,
+  AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, FileClock, History,
   MessageCircleQuestion, Play, Search, Sparkles, Stethoscope,
 } from "lucide-react";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { CSSProperties, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DocumentRecord, DocumentSummary } from "@/lib/document-types";
 import type { DocumentVersion } from "@/lib/document-versions";
+import { documentParentOptions, documentSubtreeIds, indexDocumentTree, toggleDocumentSubtreeSelection } from "@/lib/document-tree";
 import { InterviewAnswer } from "@/components/interview-answer";
 import type { InterviewQuestion, InterviewSession, KnowledgeAnswer, KnowledgeHealth, VersionSummary } from "@/lib/learning-types";
 import type { KnowledgeTool } from "@/lib/workspace-navigation";
@@ -32,6 +33,12 @@ function VersionBody({ content }: { content: string }) {
   return <div className="lab-version-body">{blocks ? blocks.map((block, index) => <p className={block.type === "heading" ? "is-heading" : ""} key={index}>{text(block.content) || (block.type === "image" ? "[图片]" : "")}</p>) : <p>{content}</p>}</div>;
 }
 
+function TreeCheckbox({ checked, mixed, label, onChange }: { checked: boolean; mixed: boolean; label: string; onChange: () => void }) {
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (input.current) input.current.indeterminate = mixed; }, [mixed]);
+  return <input ref={input} type="checkbox" checked={checked} aria-checked={mixed ? "mixed" : checked} aria-label={label} onChange={onChange} />;
+}
+
 export function KnowledgeLab({ tool, documents, currentId, beforeOpen, onCurrentChange, onSelect, onRestore, onCreate }: {
   tool: KnowledgeTool;
   documents: DocumentSummary[];
@@ -53,11 +60,20 @@ export function KnowledgeLab({ tool, documents, currentId, beforeOpen, onCurrent
   const [interviewAnswer, setInterviewAnswer] = useState("");
   const [answerRevealed, setAnswerRevealed] = useState(false);
   const [interviewNotice, setInterviewNotice] = useState("");
+  const [selectionNotice, setSelectionNotice] = useState("");
   const [health, setHealth] = useState<KnowledgeHealth | null>(null);
   const [versions, setVersions] = useState<VersionSummary[]>([]);
   const [activeVersion, setActiveVersion] = useState<DocumentVersion | null>(null);
 
   const current = useMemo(() => documents.find((item) => item.id === currentId) ?? null, [currentId, documents]);
+  const interviewDocumentRows = useMemo(() => {
+    const children = indexDocumentTree(documents);
+    return documentParentOptions(documents, children).map(({ document, depth }) => ({
+      document,
+      depth,
+      subtreeIds: documentSubtreeIds(document.id, children),
+    }));
+  }, [documents]);
 
   const loadHealth = useCallback(async (signal?: AbortSignal) => {
     setBusy(true); setError("");
@@ -114,7 +130,7 @@ export function KnowledgeLab({ tool, documents, currentId, beforeOpen, onCurrent
 
   async function startInterview() {
     if (!selectedIds.length || busy) return;
-    setBusy(true); setError(""); setAnswerRevealed(false); setQuestions([]); setInterviewNotice("");
+    setBusy(true); setError(""); setAnswerRevealed(false); setQuestions([]); setInterviewNotice(""); setSelectionNotice("");
     try {
       const result = await json<InterviewSession>(await fetch("/api/learning", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "interview-start", documentIds: selectedIds }) }));
       if (!result.questions.length) setError(result.notice || "所选文档没有足够的知识正文，请选择包含完整知识点的文档。");
@@ -136,6 +152,12 @@ export function KnowledgeLab({ tool, documents, currentId, beforeOpen, onCurrent
   }
 
   function openDocument(id: string, blockIndex?: number) { onSelect(id, blockIndex); }
+
+  function toggleInterviewDocuments(subtreeIds: string[]) {
+    const result = toggleDocumentSubtreeSelection(selectedIds, subtreeIds, 20);
+    setSelectionNotice(result.limitExceeded ? "该层级包含的文档会使选择数量超过 20 篇，请先取消部分文档后再试。" : "");
+    setSelectedIds(result.selectedIds);
+  }
 
   async function createAnswerNote() {
     if (!answer?.citations.length || busy) return;
@@ -186,7 +208,7 @@ export function KnowledgeLab({ tool, documents, currentId, beforeOpen, onCurrent
             {answer ? <div className="lab-answer"><div className="lab-answer-note"><Sparkles size={17} /><span>{answer.citations.length ? `从 ${answer.matchedDocuments} 篇笔记中找到这些要点` : "没有找到匹配内容"}</span>{Boolean(answer.citations.length) && <button disabled={busy} onClick={() => void createAnswerNote()}>整理成新笔记</button>}</div><p className="lab-answer-text">{answer.answer}</p>{Boolean(answer.citations.length) && <div className="lab-citations"><h4>原文出处</h4>{answer.citations.map((item, index) => <button key={`${item.documentId}:${item.blockIndex}`} onClick={() => openDocument(item.documentId, item.blockIndex)}><span>{index + 1}</span><div><b>{item.icon || "📄"} {item.documentTitle}</b><small>{item.heading ? `${item.heading} · ` : ""}第 {item.blockIndex + 1} 个内容块</small><p>{item.excerpt}</p></div><ArrowRight size={15} /></button>)}</div>}</div> : <div className="lab-empty"><MessageCircleQuestion size={30} /><h4>问一条能在笔记中验证的问题</h4><p>关键词越具体，定位到的原文越准确。</p></div>}</div>}
 
           {tool === "interview" && <div className="lab-panel"><div className="lab-panel-title"><div><h3>基于笔记的模拟面试</h3><p>从文档知识点出题，作答后展示整理后的文档答案；有疑问时再主动追问。</p><p>启用模型后，出题会发送所选笔记片段；主动追问时会发送本题上下文和你的回答。</p></div>{activeQuestion && <button className="lab-text-button" onClick={() => { setActiveQuestion(null); setQuestions([]); setAnswerRevealed(false); setInterviewNotice(""); }}>重新选题</button>}</div>
-            {!activeQuestion ? <>{questions.length === 0 ? <><div className="lab-document-picker">{documents.map((document) => <label key={document.id}><input type="checkbox" checked={selectedIds.includes(document.id)} onChange={() => setSelectedIds((items) => items.includes(document.id) ? items.filter((id) => id !== document.id) : items.length < 20 ? [...items, document.id] : items)} /><span>{document.icon || "📄"}</span><b>{document.title}</b></label>)}</div><div className="lab-start-row"><span>已选 {selectedIds.length} 篇，最多 20 篇</span><button className="lab-primary" disabled={busy || !selectedIds.length} onClick={() => void startInterview()}><Play size={16} />{busy ? "生成中…" : "开始模拟面试"}</button></div></> : <div className="lab-empty"><CheckCircle2 size={30} /><h4>本轮面试完成</h4><p>已完成 {questions.length} 道基础题，可以重新选择文档继续练习。</p><button className="lab-primary" onClick={() => { setQuestions([]); setQuestionIndex(0); setInterviewNotice(""); }}>重新选题</button></div>}</> : <div className="lab-interview">{interviewNotice && <div className="lab-answer-note"><Sparkles size={16} /><span>{interviewNotice}</span></div>}<div className="lab-question-meta"><span>第 {questionIndex + 1} / {questions.length} 题</span><span>{activeQuestion.documentTitle}</span><span>先作答，后看答案</span><span>{activeQuestion.engine === "ai" ? `AI 出题${activeQuestion.model ? ` · ${activeQuestion.model}` : ""}` : "本地出题"}</span></div><h4>{activeQuestion.prompt}</h4><form onSubmit={submitInterview}><textarea value={interviewAnswer} onChange={(event) => setInterviewAnswer(event.target.value)} aria-label="你的回答" placeholder="先按自己的理解作答，提交后即可查看参考答案和解析…" rows={7} maxLength={10000} disabled={answerRevealed} /><button className="lab-primary" disabled={busy || answerRevealed || !interviewAnswer.trim()}>{answerRevealed ? "已提交回答" : "提交并查看答案"}</button></form>{answerRevealed && <InterviewAnswer key={activeQuestion.id} question={activeQuestion} userAnswer={interviewAnswer} hasNext={Boolean(questions[questionIndex + 1])} onNext={continueInterview} onOpenSource={() => openDocument(activeQuestion.documentId, activeQuestion.blockIndex)} />}</div>}
+            {!activeQuestion ? <>{questions.length === 0 ? <><p className="lab-document-picker-hint">按文档层级展示，勾选父文档可一键选择或取消其全部子文档。</p><div className="lab-document-picker" role="tree" aria-label="选择面试文档">{interviewDocumentRows.map(({ document, depth, subtreeIds }) => { const selectedCount = subtreeIds.filter((id) => selectedIds.includes(id)).length; const hasChildren = subtreeIds.length > 1; const checked = selectedCount === subtreeIds.length; return <label key={document.id} className={hasChildren ? "has-children" : ""} role="treeitem" aria-level={depth + 1} aria-expanded={hasChildren ? true : undefined} aria-selected={selectedCount > 0} style={{ "--lab-tree-depth": depth } as CSSProperties}><span className="lab-tree-guides" aria-hidden="true">{Array.from({ length: depth }, (_, index) => <i key={index} style={{ left: `${18 + index * 22}px` }} />)}</span><TreeCheckbox checked={checked} mixed={selectedCount > 0 && !checked} label={`${checked ? "取消选择" : "选择"}${document.title || "未命名文档"}${hasChildren ? "及其全部子文档" : ""}`} onChange={() => toggleInterviewDocuments(subtreeIds)} /><span className="lab-tree-toggle" aria-hidden="true">{hasChildren && <ChevronDown size={14} />}</span><span className="lab-tree-icon">{document.icon || "📄"}</span><b>{document.title || "未命名文档"}</b>{hasChildren && <small>{subtreeIds.length - 1} 篇子文档</small>}</label>; })}</div>{selectionNotice && <p className="lab-selection-notice" role="alert">{selectionNotice}</p>}<div className="lab-start-row"><span>已选 {selectedIds.length} 篇，最多 20 篇</span><button className="lab-primary" disabled={busy || !selectedIds.length} onClick={() => void startInterview()}><Play size={16} />{busy ? "生成中…" : "开始模拟面试"}</button></div></> : <div className="lab-empty"><CheckCircle2 size={30} /><h4>本轮面试完成</h4><p>已完成 {questions.length} 道基础题，可以重新选择文档继续练习。</p><button className="lab-primary" onClick={() => { setQuestions([]); setQuestionIndex(0); setInterviewNotice(""); }}>重新选题</button></div>}</> : <div className="lab-interview">{interviewNotice && <div className="lab-answer-note"><Sparkles size={16} /><span>{interviewNotice}</span></div>}<div className="lab-question-meta"><span>第 {questionIndex + 1} / {questions.length} 题</span><span>{activeQuestion.documentTitle}</span><span>先作答，后看答案</span><span>{activeQuestion.engine === "ai" ? `AI 出题${activeQuestion.model ? ` · ${activeQuestion.model}` : ""}` : "本地出题"}</span></div><h4>{activeQuestion.prompt}</h4><form onSubmit={submitInterview}><textarea value={interviewAnswer} onChange={(event) => setInterviewAnswer(event.target.value)} aria-label="你的回答" placeholder="先按自己的理解作答，提交后即可查看参考答案和解析…" rows={7} maxLength={10000} disabled={answerRevealed} /><button className="lab-primary" disabled={busy || answerRevealed || !interviewAnswer.trim()}>{answerRevealed ? "已提交回答" : "提交并查看答案"}</button></form>{answerRevealed && <InterviewAnswer key={activeQuestion.id} question={activeQuestion} userAnswer={interviewAnswer} hasNext={Boolean(questions[questionIndex + 1])} onNext={continueInterview} onOpenSource={() => openDocument(activeQuestion.documentId, activeQuestion.blockIndex)} />}</div>}
           </div>}
 
           {tool === "health" && <div className="lab-panel"><div className="lab-panel-title"><div><h3>知识体检</h3><p>{health ? `已扫描 ${health.documents} 篇文档` : "扫描链接、标题和长期未整理的草稿。"}</p></div><button className="lab-text-button" disabled={busy} onClick={() => void loadHealth()}>重新扫描</button></div>{busy && !health ? <div className="lab-empty"><Stethoscope size={30} /><p>正在检查文档关系…</p></div> : health && !health.issues.length ? <div className="lab-empty"><CheckCircle2 size={30} /><h4>知识库状态很好</h4><p>没有发现失效链接、重复标题或长期未整理的草稿。</p></div> : issueGroups && <div className="lab-health"><div className="lab-health-summary"><span><strong>{issueGroups.attention.length}</strong> 项需要处理</span><span><strong>{issueGroups.suggestion.length}</strong> 项整理建议</span></div>{health!.issues.map((issue) => <button key={issue.id} onClick={() => openDocument(issue.documentId)}><span className={`lab-issue-icon is-${issue.severity}`}>{issue.severity === "attention" ? <AlertTriangle size={16} /> : <FileClock size={16} />}</span><div><b>{issue.title}</b><p>{issue.detail}</p><small>{issue.documentTitle}</small></div><ArrowRight size={15} /></button>)}</div>}</div>}
