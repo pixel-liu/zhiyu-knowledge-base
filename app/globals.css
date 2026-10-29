@@ -536,7 +536,7 @@ body {
 .dark .doc-move-to-trash { color:#a5a8b0; }
 .dark .doc-move-to-trash:hover { background:#43292c; color:#f09292; }
 @media (max-width:540px) { .doc-title-row .doc-title-input { flex-basis:100%; }.doc-header-actions { flex-wrap:wrap; justify-content:flex-end; max-width:100%; } }
-.doc-sidebar-bottom { flex:0 0 auto; display:flex; align-items:center; gap:3px; min-height:42px; padding:5px 8px; border-top:1px solid #e5e7ea; }
+.doc-sidebar-bottom { flex:0 0 auto; display:flex; align-items:center; justify-content:center; gap:3px; min-height:42px; padding:5px 8px; border-top:1px solid #e5e7ea; }
 .doc-sidebar-bottom button { width:34px; height:30px; padding:0; border:0; border-radius:5px; display:grid; place-items:center; color:#6c737e; background:transparent; cursor:pointer; }
 .doc-sidebar-bottom button span { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
 .doc-sidebar-bottom button:hover:not(:disabled) { color:#3165dd; background:#e9edf7; }
