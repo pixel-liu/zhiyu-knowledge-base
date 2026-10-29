@@ -32,6 +32,15 @@ test("document summaries, selective updates, search and atomic index updates", (
   assert.ok(summaries.every((item) => !("content" in item) && !("plainText" in item)));
   assert.equal(db.getDocument(a.id).content, body);
 
+  const lockedIds = db.setDocumentTreeLocked(a.id, true);
+  assert.deepEqual(new Set(lockedIds), new Set([a.id, b.id]));
+  assert.equal(db.getDocument(a.id).isLocked, true);
+  assert.equal(db.getDocument(b.id).isLocked, true);
+  assert.throws(() => db.updateDocument(b.id, { title: "不能改" }), /已锁定/);
+  assert.throws(() => db.createDocument({ parentId: a.id }), /已锁定/);
+  assert.throws(() => db.softDeleteDocument(a.id), /已锁定/);
+  db.setDocumentTreeLocked(a.id, false);
+
   statements.length = 0;
   db.updateDocument(b.id, { isPinned: true, tags: ["test"] });
   assert.ok(!statements.some((sql) => sql.includes("WITH RECURSIVE") || sql.includes("DELETE FROM documents_fts")));

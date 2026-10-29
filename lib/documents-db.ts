@@ -18,6 +18,7 @@ type DocumentRow = {
   plain_text: string;
   sort_order: number;
   is_pinned: number;
+  is_locked: number;
   is_deleted: number;
   created_at: string;
   updated_at: string;
@@ -49,6 +50,7 @@ const toSummary = (row: Omit<DocumentRow, "content" | "plain_text">): DocumentSu
   tags: parseTags(row.tags),
   sortOrder: row.sort_order,
   isPinned: Boolean(row.is_pinned),
+  isLocked: Boolean(row.is_locked),
   isDeleted: Boolean(row.is_deleted),
   createdAt: row.created_at,
   updatedAt: row.updated_at,
@@ -56,7 +58,7 @@ const toSummary = (row: Omit<DocumentRow, "content" | "plain_text">): DocumentSu
 });
 
 const toRecord = (row: DocumentRow): DocumentRecord => ({ ...toSummary(row), content: row.content, plainText: row.plain_text });
-const summaryColumns = "id, parent_id, title, icon, tags, sort_order, is_pinned, is_deleted, created_at, updated_at, deleted_at";
+const summaryColumns = "id, parent_id, title, icon, tags, sort_order, is_pinned, is_locked, is_deleted, created_at, updated_at, deleted_at";
 
 const emptyContent = () => JSON.stringify([
   { type: "paragraph", content: [] },
@@ -114,6 +116,7 @@ export function getDatabase() {
       plain_text TEXT NOT NULL DEFAULT '',
     sort_order INTEGER NOT NULL DEFAULT 0,
       is_pinned INTEGER NOT NULL DEFAULT 0,
+      is_locked INTEGER NOT NULL DEFAULT 0,
       is_deleted INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
@@ -146,6 +149,9 @@ export function getDatabase() {
   }
   if (!columns.some((column) => column.name === "tags")) {
     db.exec("ALTER TABLE documents ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'");
+  }
+  if (!columns.some((column) => column.name === "is_locked")) {
+    db.exec("ALTER TABLE documents ADD COLUMN is_locked INTEGER NOT NULL DEFAULT 0");
   }
 
   const count = db.prepare("SELECT COUNT(*) AS count FROM documents").get() as { count: number };
@@ -226,6 +232,7 @@ export function createDocument(input: { parentId?: string | null; title?: string
   if (parentId) {
     const parent = getDocument(parentId);
     if (!parent || parent.isDeleted) throw new Error("父文档不存在");
+    if (parent.isLocked) throw new Error("父文档已锁定，解除锁定后才能新建子文档");
   }
   const siblingCount = db.prepare(
     "SELECT COUNT(*) AS count FROM documents WHERE parent_id IS ? AND is_deleted = 0"
@@ -241,6 +248,7 @@ export function createDocument(input: { parentId?: string | null; title?: string
     plainText: contentToText(input.content ?? ""),
     sortOrder: siblingCount.count,
     isPinned: false,
+    isLocked: false,
     isDeleted: false,
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -249,8 +257,8 @@ export function createDocument(input: { parentId?: string | null; title?: string
   db.exec("BEGIN");
   try {
   db.prepare(`
-    INSERT INTO documents (id, parent_id, title, icon, tags, content, plain_text, sort_order, is_pinned, is_deleted, created_at, updated_at, deleted_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, NULL)
+    INSERT INTO documents (id, parent_id, title, icon, tags, content, plain_text, sort_order, is_pinned, is_locked, is_deleted, created_at, updated_at, deleted_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, NULL)
   `).run(
     document.id, document.parentId, document.title, document.icon, JSON.stringify(document.tags), document.content,
     document.plainText, document.sortOrder, document.createdAt, document.updatedAt
@@ -268,11 +276,13 @@ export function updateDocument(id: string, patch: Partial<Pick<DocumentRecord, "
   const db = getDatabase();
   const existing = getDocument(id);
   if (!existing || existing.isDeleted) return null;
+  if (existing.isLocked) throw new Error("文档已锁定，解除锁定后才能修改");
   const nextParentId = patch.parentId === undefined ? existing.parentId : patch.parentId;
   if (nextParentId === id) throw new Error("不能将文档设为自己的父级");
   if (nextParentId && nextParentId !== existing.parentId) {
     const parent = getDocument(nextParentId);
     if (!parent || parent.isDeleted) throw new Error("目标父文档不存在");
+    if (parent.isLocked) throw new Error("目标父文档已锁定，解除锁定后才能移动文档");
     if (descendantIds(db, id).includes(nextParentId)) throw new Error("不能移动到自己的子文档中");
   }
   const document: DocumentRecord = {
@@ -324,11 +334,27 @@ function descendantIds(db: DatabaseSync, id: string) {
   return rows.map((row) => row.id);
 }
 
+export function setDocumentTreeLocked(id: string, isLocked: boolean) {
+  const db = getDatabase();
+  const existing = getDocument(id);
+  if (!existing || existing.isDeleted) return null;
+  const ids = descendantIds(db, id);
+  const updatedAt = now();
+  const update = db.prepare("UPDATE documents SET is_locked = ?, updated_at = ? WHERE id = ?");
+  db.exec("BEGIN");
+  try {
+    for (const documentId of ids) update.run(Number(isLocked), updatedAt, documentId);
+    db.exec("COMMIT");
+  } catch (error) { db.exec("ROLLBACK"); throw error; }
+  return ids;
+}
+
 export function softDeleteDocument(id: string) {
   const db = getDatabase();
   const existing = getDocument(id);
   if (!existing || existing.isDeleted) return false;
   const ids = descendantIds(db, id);
+  if (ids.some((documentId) => getDocument(documentId)?.isLocked)) throw new Error("文档或其子文档已锁定，解除锁定后才能移入回收站");
   const deletedAt = now();
   const update = db.prepare("UPDATE documents SET is_deleted = 1, deleted_at = ?, updated_at = ? WHERE id = ?");
   db.exec("BEGIN");
@@ -405,6 +431,7 @@ export function reorderDocuments(parentId: string | null, documentIds: string[])
   if (new Set(documentIds).size !== documentIds.length || siblings.length !== documentIds.length || siblings.some((row) => !documentIds.includes(row.id))) {
     throw new Error("排序请求不完整");
   }
+  if (documentIds.some((id) => getDocument(id)?.isLocked)) throw new Error("锁定的文档不能调整顺序");
   const update = db.prepare("UPDATE documents SET sort_order = ?, updated_at = ? WHERE id = ?");
   const timestamp = now();
   db.exec("BEGIN");

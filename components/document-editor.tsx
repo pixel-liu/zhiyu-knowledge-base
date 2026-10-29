@@ -52,6 +52,7 @@ const documentEditorSchema = BlockNoteSchema.create({
 type DocumentEditorProps = {
   content: string;
   onChange: (content: string) => void;
+  editable?: boolean;
   documents: DocumentSummary[];
   bindings?: LinkReference[];
   onSelect: (id: string) => void;
@@ -364,7 +365,7 @@ function WikiSuggestionMenu({ items, selectedIndex, onItemClick, loadingState }:
   return <div className="doc-wiki-menu" role="listbox" aria-label="引用文档"><p>选择要引用的文档</p>{items.map((item, index) => <button key={index} type="button" role="option" aria-selected={selectedIndex === index} className={selectedIndex === index ? "is-selected" : ""} onMouseDown={(event) => event.preventDefault()} onClick={() => onItemClick?.(item)}><span>{item.icon}</span><span><b>{item.title}</b><small>{item.subtext}</small></span></button>)}{!items.length && <p>{loadingState === "loading" ? "正在查找…" : "没有匹配的文档，可保留 [[文档名]] 稍后关联。"}</p>}</div>;
 }
 
-export const DocumentEditor = memo(function DocumentEditor({ content, onChange, documents, bindings = [], onSelect }: DocumentEditorProps) {
+export const DocumentEditor = memo(function DocumentEditor({ content, onChange, editable = true, documents, bindings = [], onSelect }: DocumentEditorProps) {
   const { resolvedTheme } = useTheme();
   const [initial] = useState(() => readBlocks(content));
   const migrationApplied = useRef(false);
@@ -415,15 +416,16 @@ export const DocumentEditor = memo(function DocumentEditor({ content, onChange, 
     onChange(JSON.stringify(editor.document));
   });
   const scheduleChange = useCallback(() => {
-    if (normalizingLinks.current) return;
+    if (!editable || normalizingLinks.current) return;
     bufferedChange.current = true;
     // Serialize at most once per 160 ms, even during uninterrupted typing.
     if (!changeTimer.current) changeTimer.current = setTimeout(flushChange, 160);
-  }, [flushChange]);
+  }, [editable, flushChange]);
   useEffect(() => {
+    if (!editable) return;
     const frame = window.requestAnimationFrame(() => { if (normalizeLinks()) onChange(JSON.stringify(editor.document)); });
     return () => window.cancelAnimationFrame(frame);
-  }, [editor, documents, bindings, normalizeLinks, onChange]);
+  }, [editable, editor, documents, bindings, normalizeLinks, onChange]);
   useEffect(() => {
     const onHidden = () => { if (document.hidden) flushChange(); };
     window.addEventListener("pagehide", flushChange);
@@ -437,11 +439,11 @@ export const DocumentEditor = memo(function DocumentEditor({ content, onChange, 
     };
   }, [flushChange]);
   useEffect(() => {
-    if (initial.migrated && !migrationApplied.current) {
+    if (editable && initial.migrated && !migrationApplied.current) {
       migrationApplied.current = true;
       onChange(JSON.stringify(editor.document));
     }
-  }, [editor, initial.migrated, onChange]);
+  }, [editable, editor, initial.migrated, onChange]);
 
   useEffect(() => {
     // Do this once after the editor mounts. Observing and mutating the
@@ -474,6 +476,7 @@ export const DocumentEditor = memo(function DocumentEditor({ content, onChange, 
       else setLinkError("这篇文档已删除或不可用。");
     }}>{linkError && <p className="doc-knowledge-error" role="alert">{linkError}</p>}<BlockNoteView
       editor={editor}
+      editable={editable}
       theme={resolvedTheme}
       sideMenu={false}
       slashMenu={false}
