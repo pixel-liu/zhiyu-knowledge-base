@@ -317,11 +317,17 @@ body {
 }
 .doc-editor .bn-block-content[data-content-type="codeBlock"] > div > select { opacity:0 !important; }
 .doc-more-wrap { position:relative; }
-.doc-more-menu { position:absolute; top:38px; right:0; z-index:25; width:190px; padding:6px; border:1px solid #e1e3e7; border-radius:8px; background:#fff; box-shadow:0 10px 30px #1c24331f; }
+.doc-more-menu { position:absolute; top:38px; right:0; z-index:25; width:220px; padding:6px; border:1px solid #e1e3e7; border-radius:8px; background:#fff; box-shadow:0 10px 30px #1c24331f; }
 .doc-topbar-actions .doc-more-menu button { width:100%; height:auto; min-height:48px; display:grid; align-content:center; justify-content:stretch; gap:3px; padding:8px 10px; border:0; border-radius:5px; text-align:left; background:transparent; color:#363a40; cursor:pointer; }
 .doc-more-menu button:hover { background:#f1f3f7; }
 .doc-more-menu span { font-size:13px; }
 .doc-more-menu small { color:#92969e; font-size:11px; }
+.doc-export-menu-row { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; border-radius:5px; }
+.doc-export-menu-row:hover { background:#f1f3f7; }
+.doc-topbar-actions .doc-more-menu .doc-export-menu-action { min-width:0; padding-right:6px; }
+.doc-export-menu-row:hover .doc-export-menu-action { background:transparent; }
+.doc-export-scope { display:grid; justify-items:center; gap:4px; padding:5px 10px 5px 4px; }
+.doc-export-scope small { white-space:nowrap; }
 .doc-hidden-input { display:none; }
 .doc-tags { min-height:32px; display:flex; align-items:center; flex-wrap:wrap; gap:6px; padding:10px 0 2px; color:#8f949d; font-size:12px; }
 .doc-tags-label { margin-right:2px; }
@@ -341,6 +347,8 @@ body {
 .dark .doc-more-menu { border-color:#3a3b40; background:#222327; box-shadow:0 10px 30px #0006; }
 .dark .doc-more-menu button { color:#e6e7eb; }
 .dark .doc-more-menu button:hover { background:#303239; }
+.dark .doc-export-menu-row:hover { background:#303239; }
+.dark .doc-export-menu-row:hover .doc-export-menu-action { background:transparent; }
 .dark .doc-more-menu small,.dark .doc-tags { color:#92959d; }
 .dark .doc-tag { color:#a9c0ff; background:#29354f; }
 .dark .doc-tag:hover { color:#f09292; background:#43292c; }
