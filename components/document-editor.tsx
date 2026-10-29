@@ -1,9 +1,11 @@
 "use client";
 
-import { PartialBlock } from "@blocknote/core";
+import { BlockNoteSchema, createStyleSpecFromTipTapMark, defaultStyleSpecs, PartialBlock } from "@blocknote/core";
 import { zh } from "@blocknote/core/locales";
 import { BlockNoteView } from "@blocknote/mantine";
 import "@blocknote/mantine/style.css";
+import { InputRule, markInputRule } from "@tiptap/core";
+import Code from "@tiptap/extension-code";
 import {
   AddBlockButton, BlockColorsItem, DragHandleButton, DragHandleMenu, RemoveBlockItem,
   SideMenu, SideMenuController, SuggestionMenuController, useBlockNoteEditor, useComponentsContext, useCreateBlockNote, useExtensionState, useSelectedBlocks,
@@ -16,6 +18,36 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 import type { DocumentSummary } from "@/lib/document-types";
 import { documentHref, linkedDocumentId, linkifyInlineContent, type LinkReference } from "@/lib/document-links";
 import { useStableCallback } from "@/hooks/use-stable-callback";
+
+// BlockNote's default inline-code mark excludes every other mark. That makes
+// toolbar formatting silently skip code-styled identifiers such as InputStream.
+// Keep the code appearance and input behavior, but let it coexist with text
+// decorations (notably underline and strike-through).
+const documentEditorSchema = BlockNoteSchema.create({
+  styleSpecs: {
+    ...defaultStyleSpecs,
+    code: createStyleSpecFromTipTapMark(Code.extend({
+      excludes: "",
+      addInputRules() {
+        return [
+          markInputRule({ find: /(^|[^`])`([^`]+)`(?!`)$/, type: this.type }),
+          new InputRule({
+            find: /(^|[^`])`([^`]+)`(?!`) $/,
+            handler: ({ state, range, match }) => {
+              const { tr, schema } = state;
+              const leadingChar = match[1];
+              const inlineCode = match[2];
+              tr.replaceWith(range.from + leadingChar.length, range.to, [
+                schema.text(inlineCode, [this.type.create()]),
+                schema.text(" "),
+              ]);
+            },
+          }),
+        ];
+      },
+    }), "boolean"),
+  },
+});
 
 type DocumentEditorProps = {
   content: string;
@@ -338,7 +370,8 @@ export const DocumentEditor = memo(function DocumentEditor({ content, onChange, 
   const migrationApplied = useRef(false);
   const [linkError, setLinkError] = useState("");
   const editor = useCreateBlockNote({
-    initialContent: initial.blocks,
+    schema: documentEditorSchema,
+    initialContent: initial.blocks as PartialBlock<typeof documentEditorSchema.blockSchema>[],
     dictionary: zh,
     uploadFile,
     pasteHandler: ({ event, editor: currentEditor, defaultPasteHandler }) => {

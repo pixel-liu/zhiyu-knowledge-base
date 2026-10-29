@@ -431,6 +431,7 @@ body {
 .dark .doc-move-confirm-modal .doc-confirm-icon { color:#9bb5f5; background:#293652; }
 /* Resizable document panes */
 .doc-layout { --sidebar-width:292px; --outline-width:292px; }
+.doc-layout.is-sidebar-collapsed .doc-collapse { position:fixed; top:16px; left:16px; z-index:21; }
 .doc-sidebar { width:var(--sidebar-width); flex-basis:var(--sidebar-width); border-right:0; }
 .doc-outline { flex-direction:column; overflow:hidden; width:var(--outline-width); flex-basis:var(--outline-width); margin-left:0; border-left:0; }
 .doc-outline-title { flex-shrink:0; }
