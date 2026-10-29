@@ -9,11 +9,20 @@ const source = {
   blockIndex: 1, keywords: ["消息队列", "幂等键"], depth: 1, engine: "local", model: null,
 };
 
-function moduleWith({ env = {}, fetch, ...overrides }) {
+function moduleWith({ env = {}, fetch, savedConfig = null, ...overrides }) {
+  const configured = savedConfig || (env.DEEPSEEK_API_KEY ? {
+    provider: "deepseek", apiKey: env.DEEPSEEK_API_KEY,
+    baseUrl: (env.DEEPSEEK_BASE_URL || "https://api.deepseek.com").replace(/\/+$/, ""),
+    model: env.DEEPSEEK_MODEL || "deepseek-flash",
+  } : env.OPENAI_API_KEY ? {
+    provider: "openai", apiKey: env.OPENAI_API_KEY,
+    baseUrl: (env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/+$/, ""),
+    model: env.OPENAI_MODEL || "gpt-4o-mini",
+  } : null);
   return load("lib/ai-interview.ts", {
     process: { ...process, env }, fetch, AbortSignal,
     ...overrides,
-    require: (name, fallback) => name === "./learning-store" ? {
+    require: (name, fallback) => name === "./ai-config" ? { getAiConfig: () => configured } : name === "./learning-store" ? {
       buildInterview: () => [source],
       evaluateInterview: (question, answer) => ({
         coverage: answer.includes("幂等") ? 50 : 0, matched: answer.includes("幂等") ? ["幂等键"] : [],
@@ -98,6 +107,19 @@ test("DeepSeek key selects the official Responses endpoint and default model", a
   assert.equal(request.body.model, "deepseek-flash");
   assert.equal(request.body.reasoning.effort, "none", "keeps the output budget for interview content");
   assert.equal(request.init.headers.Authorization, "Bearer deepseek-test-key");
+});
+
+test("a saved browser configuration takes effect for the very next interview request", async () => {
+  let request;
+  const ai = moduleWith({
+    env: { DEEPSEEK_API_KEY: "environment-key" },
+    savedConfig: { provider: "openai", apiKey: "saved-key", baseUrl: "https://gateway.example/v1", model: "saved-model" },
+    fetch: async (url, init) => { request = { url, init, body: JSON.parse(init.body) }; return response(generated); },
+  });
+  const session = await ai.generateInterview(["doc-1"]);
+  assert.equal(session.model, "saved-model");
+  assert.equal(request.url, "https://gateway.example/v1/responses");
+  assert.equal(request.init.headers.Authorization, "Bearer saved-key");
 });
 
 const generated = { questions: [{ sourceIndex: 0, prompt: "消息队列在异步上传中解决了什么问题？", answerQuotes: [source.source], keyPoints: ["消息队列", "幂等键"] }] };

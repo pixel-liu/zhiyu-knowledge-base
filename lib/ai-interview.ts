@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { buildInterview } from "./learning-store";
 import type { InterviewFollowUp, InterviewFollowUpTurn, InterviewQuestion, InterviewSession } from "./learning-types";
+import { getAiConfig } from "./ai-config";
 
 const generatedQuestionsSchema = z.object({
   questions: z.array(z.object({
@@ -44,23 +45,7 @@ const followUpOutputSchema = {
   additionalProperties: false,
 } as const;
 
-type AiConfig = { provider: "deepseek" | "openai"; apiKey: string; baseUrl: string; model: string };
-
-function aiConfig(): AiConfig | null {
-  const deepseekKey = process.env.DEEPSEEK_API_KEY?.trim();
-  if (deepseekKey) return {
-    provider: "deepseek", apiKey: deepseekKey,
-    baseUrl: (process.env.DEEPSEEK_BASE_URL?.trim() || "https://api.deepseek.com").replace(/\/+$/, ""),
-    model: process.env.DEEPSEEK_MODEL?.trim() || "deepseek-flash",
-  };
-  const openaiKey = process.env.OPENAI_API_KEY?.trim();
-  if (!openaiKey) return null;
-  return {
-    provider: "openai", apiKey: openaiKey,
-    baseUrl: (process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1").replace(/\/+$/, ""),
-    model: process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini",
-  };
-}
+type AiConfig = ReturnType<typeof getAiConfig> extends infer Config ? Exclude<Config, null> : never;
 
 function responsesUrl(config: AiConfig) {
   if (config.provider === "deepseek") return `${config.baseUrl}/responses`;
@@ -148,7 +133,7 @@ function fallbackSession(questions: InterviewQuestion[], notice: string): Interv
 
 export async function generateInterview(documentIds: string[]): Promise<InterviewSession> {
   const sources = buildInterview(documentIds);
-  const config = aiConfig();
+  const config = getAiConfig();
   if (!sources.length) return { questions: [], engine: "local", model: null, notice: "所选文档没有足够的知识正文，只有标题或空内容的章节不会出题。" };
   if (!config) return fallbackSession(sources, "未配置大模型，已使用本地规则出题。");
   try {
@@ -189,7 +174,7 @@ function isMaterialQuestion(prompt: string): boolean {
 }
 
 export async function answerInterviewFollowUp(question: InterviewQuestion, answer: string, query: string, history: InterviewFollowUpTurn[] = []): Promise<InterviewFollowUp> {
-  const config = aiConfig();
+  const config = getAiConfig();
   if (!config) return { answer: "", model: null, notice: "未配置大模型，暂时无法回答追问。可以先查看参考答案和笔记原文。" };
   try {
     const result = await structuredResponse(config, "interview_follow_up", followUpOutputSchema,

@@ -34,6 +34,7 @@ preview*.log
 /data/auth.db
 /data/auth.db-shm
 /data/auth.db-wal
+/data/ai-interview.json
 /data/*.repair-backup.json
 /public/uploads/
 

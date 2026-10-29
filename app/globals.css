@@ -653,6 +653,37 @@ body {
 .lab-panel-title p { margin:6px 0 0; color:#7b8390; font-size:13px; line-height:1.55; }
 .lab-text-button { border:0; padding:4px 0; color:#3866ca; background:transparent; font-size:12px; cursor:pointer; white-space:nowrap; }
 .lab-text-button:hover { text-decoration:underline; }
+.lab-interview-actions { display:flex; align-items:center; gap:16px; flex:0 0 auto; }
+.lab-config-trigger { min-height:33px; display:inline-flex; align-items:center; gap:6px; padding:0 10px; border:1px solid #b9c9ec; border-radius:7px; color:#315fbd; background:#f8faff; font-size:12px; font-weight:600; white-space:nowrap; cursor:pointer; }
+.lab-config-trigger:hover { border-color:#89a6de; background:#eef4ff; }
+.lab-config-backdrop { position:fixed; z-index:80; inset:0; display:grid; place-items:center; padding:20px; background:#19233a57; }
+.lab-config-dialog { width:min(530px,100%); max-height:calc(100vh - 40px); overflow:auto; border:1px solid #d7dfed; border-radius:12px; color:#30394a; background:#fff; box-shadow:0 24px 70px #17233d38; }
+.lab-config-dialog header { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:11px; padding:19px 20px 16px; border-bottom:1px solid #e6eaf1; }
+.lab-config-icon { width:34px; height:34px; display:grid; place-items:center; border-radius:9px; color:#315fc2; background:#eaf0ff; }
+.lab-config-dialog h3 { margin:0; color:#263148; font-size:16px; line-height:1.35; }
+.lab-config-dialog header p { margin:3px 0 0; color:#7c8697; font-size:12px; }
+.lab-config-close { width:30px; height:30px; display:grid; place-items:center; border:0; border-radius:6px; color:#7c8799; background:transparent; cursor:pointer; }
+.lab-config-close:hover { color:#41506a; background:#f0f3f8; }
+.lab-config-security { display:flex; align-items:flex-start; gap:7px; margin:16px 20px 0; padding:10px 11px; border:1px solid #d8e4fa; border-radius:7px; color:#59719d; background:#f5f8ff; font-size:12px; line-height:1.55; }
+.lab-config-security svg { flex:0 0 auto; margin-top:1px; }
+.lab-config-loading { min-height:250px; display:flex; align-items:center; justify-content:center; gap:8px; color:#7d8798; font-size:13px; }
+.lab-config-loading svg { animation:lab-config-spin 1s linear infinite; }
+@keyframes lab-config-spin { to { transform:rotate(360deg); } }
+.lab-config-dialog form { display:grid; gap:14px; padding:18px 20px 20px; }
+.lab-config-dialog label { display:grid; gap:6px; color:#5b6678; font-size:12px; font-weight:600; }
+.lab-config-dialog input,.lab-config-dialog select { box-sizing:border-box; width:100%; height:37px; padding:0 10px; border:1px solid #d4dae5; border-radius:7px; outline:0; color:#283348; background:#fff; font:13px inherit; font-weight:400; }
+.lab-config-dialog input:focus,.lab-config-dialog select:focus { border-color:#7195df; box-shadow:0 0 0 3px #4b78dd1a; }
+.lab-config-grid { display:grid; grid-template-columns:1fr 1.45fr; gap:12px; }
+.lab-config-status,.lab-config-notice { margin:0; padding:9px 10px; border-radius:6px; color:#747f91; background:#f5f6f8; font-size:12px; line-height:1.5; }
+.lab-config-status.is-ready { color:#4a6b9f; background:#f1f5ff; }
+.lab-config-notice { color:#36745d; background:#eff9f4; }
+.lab-config-dialog .lab-error { position:static; margin:0; }
+.lab-config-dialog footer { display:grid; grid-template-columns:auto 1fr auto auto; align-items:center; gap:8px; margin-top:2px; }
+.lab-config-cancel,.lab-config-remove { min-height:34px; padding:0 10px; border:0; border-radius:6px; color:#59677d; background:transparent; font-size:12px; cursor:pointer; }
+.lab-config-cancel:hover { background:#f2f4f7; }
+.lab-config-remove { color:#ad5b48; }
+.lab-config-remove:hover { color:#974530; background:#fff3f0; }
+.lab-config-dialog button:disabled { opacity:.55; cursor:not-allowed; }
 .lab-primary { min-height:36px; display:inline-flex; align-items:center; justify-content:center; gap:7px; padding:0 15px; border:0; border-radius:7px; color:#fff; background:#3265d5; font-size:13px; font-weight:600; cursor:pointer; }
 .lab-primary:hover { background:#2859c4; }
 .lab-primary:disabled,.lab-text-button:disabled { opacity:.52; cursor:not-allowed; }
@@ -771,6 +802,22 @@ body {
 .dark .lab-heading { border-color:#35373d; }
 .dark .lab-heading h2,.dark .lab-panel-title h3,.dark .lab-interview>h4,.dark .lab-version-preview>h4 { color:#f0f1f3; }
 .dark .lab-heading p,.dark .lab-panel-title p { color:#a3a6ad; }
+.dark .lab-config-dialog { border-color:#41454e; color:#d7dce5; background:#25262b; box-shadow:0 24px 80px #0009; }
+.dark .lab-config-dialog header { border-color:#393c43; }
+.dark .lab-config-dialog h3 { color:#eceef3; }
+.dark .lab-config-dialog header p { color:#a8adb7; }
+.dark .lab-config-close { color:#aeb4bf; }
+.dark .lab-config-close:hover { color:#edf0f5; background:#35383f; }
+.dark .lab-config-trigger { border-color:#506999; color:#acc6ff; background:#293650; }
+.dark .lab-config-trigger:hover { border-color:#6686c5; background:#304264; }
+.dark .lab-config-security { border-color:#405578; color:#afc4ea; background:#273249; }
+.dark .lab-config-dialog label { color:#bbc1cd; }
+.dark .lab-config-dialog input,.dark .lab-config-dialog select { border-color:#474b54; color:#e5e8ed; background:#2d2f35; }
+.dark .lab-config-status { color:#b4bac5; background:#303238; }
+.dark .lab-config-status.is-ready { color:#b7cbf8; background:#293550; }
+.dark .lab-config-notice { color:#a9d8be; background:#263b31; }
+.dark .lab-config-cancel:hover { background:#35383f; }
+.dark .lab-config-remove:hover { background:#492d2a; }
 .dark .lab-nav { border-color:#35373d; background:#25262a; }
 .dark .lab-nav button { color:#a9adb5; }
 .dark .lab-nav button:hover { color:#e5e7eb; background:#303238; }
@@ -812,6 +859,12 @@ body {
   .lab-nav small { display:none; }
   .lab-nav b { display:block; overflow:hidden; font-size:11px; text-align:center; text-overflow:ellipsis; white-space:nowrap; }
   .lab-content { padding:18px 14px 24px; }
+  .lab-panel-title { gap:12px; }
+  .lab-interview-actions { gap:10px; }
+  .lab-config-dialog { max-height:calc(100vh - 24px); }
+  .lab-config-grid { grid-template-columns:1fr; gap:14px; }
+  .lab-config-dialog footer { grid-template-columns:1fr auto auto; }
+  .lab-config-dialog footer>span { display:none; }
   .lab-document-picker small { display:none; }
   .lab-ask-form button { padding:0 10px; }
   .lab-ask-form input { font-size:13px; }
