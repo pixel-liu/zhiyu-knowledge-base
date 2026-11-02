@@ -110,9 +110,9 @@ async function main() {
   const saved = readJson(stampPath);
   const buildIdPath = join(root, ".next", "BUILD_ID");
   if (!existsSync(buildIdPath) || saved?.source !== source || saved.buildId !== readFileSync(buildIdPath, "utf8").trim()) {
-    console.log("首次启动或检测到代码更新，正在生成正式版本（首次构建需要一些时间）…");
+    console.log("首次启动或检测到代码更新，正在使用 Webpack 生成正式版本（首次构建需要一些时间）…");
     rmSync(stampPath, { force: true });
-    const code = await launch(["build"]);
+    const code = await launch(["build", "--webpack"]);
     if (code !== 0) throw new Error("构建失败，服务尚未启动。请根据上方错误修复后重试。");
     if (fingerprint() !== source) throw new Error("构建期间源文件发生变化，请重新启动以生成最新版本。");
     writeFileSync(stampPath, JSON.stringify({ source, buildId: readFileSync(buildIdPath, "utf8").trim() }));
