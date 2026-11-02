@@ -482,7 +482,36 @@ export const DocumentEditor = memo(function DocumentEditor({ content, onChange, 
       slashMenu={false}
       onChange={scheduleChange}
     >
-      <SideMenuController sideMenu={ZhiyuSideMenu} />
+      <SideMenuController sideMenu={ZhiyuSideMenu} floatingUIOptions={{
+        useFloatingOptions: {
+          middleware: [{
+            name: "headingTextAlignment",
+            fn: ({ y, rects, elements }) => {
+              const reference = elements.reference;
+              const element = reference instanceof Element ? reference : reference.contextElement;
+              const heading = element?.querySelector(':scope > .bn-block-content[data-content-type="heading"]');
+              const inline = heading?.querySelector(".bn-inline-content");
+              if (!inline) return {};
+
+              // Imported headings can start with hard breaks. Anchor the handle
+              // to the first actual text line rather than the block's blank top.
+              const walker = document.createTreeWalker(inline, NodeFilter.SHOW_TEXT);
+              for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+                const start = node.textContent?.search(/\S/) ?? -1;
+                if (start < 0) continue;
+                const range = document.createRange();
+                range.setStart(node, start);
+                range.setEnd(node, start + 1);
+                const textRect = range.getBoundingClientRect();
+                if (!textRect.height) continue;
+                const referenceTop = reference.getBoundingClientRect().top;
+                return { y: y + textRect.top + textRect.height / 2 - referenceTop - rects.floating.height / 2 };
+              }
+              return {};
+            },
+          }],
+        },
+      }} />
       <SuggestionMenuController
         triggerCharacter="/"
         suggestionMenuComponent={CompactSuggestionMenu}
