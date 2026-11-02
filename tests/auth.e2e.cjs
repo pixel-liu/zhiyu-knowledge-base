@@ -72,6 +72,23 @@ async function main() {
     const backup = await backupResponse.json();
     assert.equal(backup.reviews.length, 1);
     assert.equal((await post("/api/backup", backup)).status, 200);
+    const removeReviews = (documentIds, headers = {}) => send("/api/reviews", {
+      method: "DELETE", headers: { Cookie: cookie, Origin: base, "Content-Type": "application/json", ...headers }, body: JSON.stringify({ documentIds }),
+    });
+    assert.equal((await removeReviews([document.id], { Cookie: "" })).status, 401);
+    assert.equal((await removeReviews([document.id], { Origin: "http://other.example" })).status, 403);
+    const removed = await removeReviews([document.id]);
+    assert.equal(removed.status, 200);
+    assert.equal((await removed.json()).overview.total, 1);
+    assert.equal(await (await send(`/api/documents/${document.id}/review`, { headers: { Cookie: cookie } })).json(), null);
+    const reenrolled = await (await post(`/api/documents/${document.id}/review`, { status: "learning" })).json();
+    assert.equal(reenrolled.reviewCount, 0);
+    assert.equal((await post(`/api/documents/${document.id}/review`, { grade: "good", version: plan.version })).status, 409);
+    const allPlans = await (await send("/api/reviews", { headers: { Cookie: cookie } })).json();
+    const allRemoved = await (await removeReviews(allPlans.items.map((item) => item.id))).json();
+    assert.equal(allRemoved.overview.total, 0);
+    assert.equal(allRemoved.overview.due, 0);
+    assert.equal((await post(`/api/documents/${document.id}/review`, { status: "learning" })).status, 200);
     assert.equal((await send("/api/documents", { headers: { Cookie: cookie } })).status, 200);
     assert.equal((await send("/api/documents", { method: "POST", headers: { Cookie: cookie, Origin: "http://other.example" } })).status, 403);
     assert.equal((await auth({ action: "setup", ...credentials })).status, 409);
@@ -85,7 +102,7 @@ async function main() {
     const documents = await (await send("/api/documents", { headers: { Cookie: secondCookie } })).json();
     assert.ok(documents.some((item) => item.id === document.id && item.title === "登录验证文档"));
     await auth({ action: "logout" }, { Cookie: secondCookie });
-    console.log("正式版本验证通过：登录与访问验证、双向链接、复习计划、重复评分拦截、备份导入，以及退出后重新登录。");
+    console.log("正式版本验证通过：登录与访问验证、双向链接、复习单项和批量删除、重新加入、旧评分拦截、备份导入，以及退出后重新登录。");
   } catch (error) {
     console.error(logs);
     throw error;

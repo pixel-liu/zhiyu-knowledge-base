@@ -1,0 +1,20 @@
+.review-selection-bar { display:flex; align-items:center; flex-wrap:wrap; gap:14px; color:#8b94a3; font-size:12px; }
+.review-selection-bar label { display:flex; align-items:center; gap:8px; cursor:pointer; }
+.review-dialog input[type=checkbox] { width:15px; height:15px; flex-shrink:0; accent-color:#3165dd; cursor:pointer; }
+.review-selection-bar > button { margin-left:auto; }
+.review-selection-bar button,.review-item-actions button { display:flex; align-items:center; justify-content:center; gap:5px; padding:7px 10px; border:1px solid #dce3f3; border-radius:5px; color:#3165dd; background:#fff; font-size:12px; cursor:pointer; white-space:nowrap; }
+.review-list li > .review-item-actions { display:flex; flex:0 0 auto; gap:8px; }
+.review-dialog .review-delete { color:#a56767; border-color:#eadada; }
+.review-item-actions button:hover { background:#edf3ff; }
+.review-dialog .review-delete:hover:not(:disabled) { color:#ba4545; background:#fff3f3; border-color:#e3b7b7; }
+.review-dialog button:disabled { opacity:.5; cursor:default; }
+.review-dialog input:focus-visible { outline:2px solid #7fa4ff; outline-offset:3px; }
+.dark .review-selection-bar button,.dark .review-item-actions button { background:#27282c; border-color:#3d4b65; color:#9bb5f5; }
+.dark .review-dialog .review-delete { border-color:#624343; color:#dca0a0; }
+.dark .review-dialog .review-delete:hover:not(:disabled) { background:#3b292c; border-color:#996161; color:#f1b1b1; }
+.dark .review-item-actions button:hover { background:#293652; }
+@media (max-width:540px) {
+  .review-list li { flex-wrap:wrap; gap:9px; }
+  .review-list li > .review-item-content { flex-basis:calc(100% - 65px); }
+  .review-list li > .review-item-actions { margin-left:auto; }
+}

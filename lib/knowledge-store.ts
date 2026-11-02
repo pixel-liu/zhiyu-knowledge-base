@@ -1,4 +1,5 @@
 import { getDatabase, getDocument } from "./documents-db";
+import { randomInt } from "node:crypto";
 import { nextReview, statusForStage, type DocumentConnections, type LinkedDocument, type ReviewGrade, type ReviewOverview, type ReviewPlan, type StudyStatus } from "./knowledge-types";
 
 type ReviewRow = { document_id: string; stage: number; due_at: string; last_reviewed_at: string | null; review_count: number; version: number };
@@ -38,12 +39,25 @@ export function getReview(id: string) {
 export function setStudyStatus(id: string, status: StudyStatus | "off") {
   requireDocument(id);
   const db = getDatabase();
-  if (status === "off") { db.prepare("DELETE FROM document_reviews WHERE document_id = ?").run(id); return null; }
+  if (status === "off") { removeReviewPlans([id]); return null; }
   const stage = status === "learning" ? 0 : status === "consolidating" ? 2 : 4;
   const dueAt = new Date(Date.now() + (stage === 0 ? 0 : stage === 2 ? 3 : 14) * 86400000).toISOString();
-  db.prepare(`INSERT INTO document_reviews (document_id, stage, due_at) VALUES (?, ?, ?)
-    ON CONFLICT(document_id) DO UPDATE SET stage = excluded.stage, due_at = excluded.due_at, version = version + 1`).run(id, stage, dueAt);
+  // A new enrollment must reject scores submitted from a previously removed plan.
+  db.prepare(`INSERT INTO document_reviews (document_id, stage, due_at, version) VALUES (?, ?, ?, ?)
+    ON CONFLICT(document_id) DO UPDATE SET stage = excluded.stage, due_at = excluded.due_at, version = version + 1`).run(id, stage, dueAt, randomInt(1, 2 ** 48 - 1));
   return getReview(id);
+}
+
+export function removeReviewPlans(ids: string[]) {
+  const db = getDatabase();
+  const deletedIds: string[] = [];
+  const remove = db.prepare("DELETE FROM document_reviews WHERE document_id = ? AND EXISTS (SELECT 1 FROM documents WHERE id = ? AND is_deleted = 0)");
+  db.exec("BEGIN");
+  try {
+    for (const id of new Set(ids)) if (remove.run(id, id).changes) deletedIds.push(id);
+    db.exec("COMMIT");
+  } catch (error) { db.exec("ROLLBACK"); throw error; }
+  return deletedIds;
 }
 
 export function gradeReview(id: string, grade: ReviewGrade, version: number) {
