@@ -3,6 +3,7 @@
 import { ArrowRight, MessageCircleQuestion } from "lucide-react";
 import { FormEvent, useId, useState } from "react";
 import type { InterviewFollowUp, InterviewFollowUpTurn, InterviewQuestion } from "@/lib/learning-types";
+import { InterviewMarkdown } from "@/components/interview-markdown";
 
 export function InterviewAnswer({ question, userAnswer, hasNext, onNext, onOpenSource }: {
   question: InterviewQuestion;
@@ -39,14 +40,14 @@ export function InterviewAnswer({ question, userAnswer, hasNext, onNext, onOpenS
   return <section className="lab-feedback" aria-label="参考答案和追问">
     <div className="lab-question-meta"><span>答案来自文档原文</span></div>
     <h5>文档答案</h5>
-    <p className="lab-reference-text">{question.referenceAnswer || question.source}</p>
-    {question.explanation && <><h5>答题解析</h5><p className="lab-reference-text">{question.explanation}</p></>}
+    <InterviewMarkdown>{question.referenceAnswer || question.source}</InterviewMarkdown>
+    {question.explanation && <><h5>答题解析</h5><InterviewMarkdown>{question.explanation}</InterviewMarkdown></>}
     {Boolean(question.keywords.length) && <div className="lab-reference-points"><b>核对要点</b><ul>{question.keywords.map((point) => <li key={point}>{point}</li>)}</ul></div>}
-    <details className="lab-reference-source"><summary>笔记原文与出处</summary><blockquote><span>{question.documentTitle}{question.heading ? ` · ${question.heading}` : ""}</span>{question.source}</blockquote><button type="button" className="lab-text-button" onClick={onOpenSource}>打开笔记原文</button></details>
+    <details className="lab-reference-source"><summary>笔记原文与出处</summary><blockquote><span>{question.documentTitle}{question.heading ? ` · ${question.heading}` : ""}</span><InterviewMarkdown compact>{question.source}</InterviewMarkdown></blockquote><button type="button" className="lab-text-button" onClick={onOpenSource}>打开笔记原文</button></details>
     <div className="lab-follow-up">
       <div className="lab-follow-up-heading"><MessageCircleQuestion size={17} /><label htmlFor={inputId}>还有疑问？继续追问</label></div>
       <p>针对这道题提问，发送后由 AI 结合笔记解答。</p>
-      <div className="lab-follow-up-history" aria-live="polite">{turns.map((turn, index) => <div className="lab-follow-up-turn" key={index}><b>你的追问</b><p>{turn.question}</p><b>AI 解答</b><p>{turn.answer}</p></div>)}</div>
+      <div className="lab-follow-up-history" aria-live="polite">{turns.map((turn, index) => <div className="lab-follow-up-turn" key={index}><b>你的追问</b><p>{turn.question}</p><b>AI 解答</b><InterviewMarkdown compact>{turn.answer}</InterviewMarkdown></div>)}</div>
       <form onSubmit={followUp} aria-label="针对本题追问">
         <textarea id={inputId} value={draft} onChange={(event) => setDraft(event.target.value)} rows={3} maxLength={1000} disabled={busy} placeholder="例如：为什么需要这样设计？我的回答漏掉了什么？" />
         <button className="lab-primary" disabled={busy || !draft.trim()}>{busy ? "正在解答…" : "发送追问"}</button>

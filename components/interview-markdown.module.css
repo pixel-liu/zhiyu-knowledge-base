@@ -1,0 +1,44 @@
+.content {
+  min-width: 0;
+  margin: 8px 0 14px;
+  color: #414c60;
+  font-size: 14px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.compact { font-size: 13px; }
+
+div.content p { margin: 0 0 8px; white-space: normal; font-size: inherit; line-height: inherit; color: inherit; }
+div.content :is(h1, h2, h3, h4, h5, h6) { margin: 14px 0 6px; color: #293245; font-size: 1em; font-weight: 650; line-height: 1.5; }
+div.content h1 { font-size: 1.2em; }
+div.content h2 { font-size: 1.1em; }
+div.content :is(ul, ol) { margin: 6px 0 10px; padding-left: 22px; }
+div.content ul { list-style: disc; }
+div.content ol { list-style: decimal; }
+div.content li { margin: 2px 0; padding-left: 2px; }
+div.content li > :is(p, ul, ol) { margin-top: 2px; margin-bottom: 4px; }
+div.content li > input { margin-right: 6px; }
+div.content code { padding: 2px 5px; border-radius: 4px; background: #edf0f5; color: #335588; font-family: Consolas, "SFMono-Regular", monospace; font-size: .9em; }
+div.content pre { max-width: 100%; margin: 10px 0; padding: 12px 14px; overflow-x: auto; border: 1px solid #e2e6ee; border-radius: 7px; background: #f6f8fb; white-space: pre; overflow-wrap: normal; font-size: 13px; line-height: 1.55; tab-size: 4; }
+div.content pre code { padding: 0; border-radius: 0; background: transparent; color: inherit; font-size: inherit; }
+div.content blockquote { margin: 10px 0; padding: 6px 12px; border-left: 3px solid #cbd8f3; border-radius: 0; background: #f7f9fc; color: #63718a; font-size: inherit; line-height: inherit; }
+div.content a { color: #3866ca; text-decoration: underline; text-underline-offset: 2px; }
+div.content hr { margin: 14px 0; border: 0; border-top: 1px solid #e2e6ee; }
+div.content img { max-width: 100%; height: auto; }
+.tableScroll { max-width: 100%; margin: 10px 0; overflow-x: auto; }
+div.content table { width: 100%; border-collapse: collapse; font-size: .93em; line-height: 1.55; }
+div.content :is(th, td) { padding: 6px 10px; border: 1px solid #e2e6ee; }
+div.content th { background: #f1f4f9; font-weight: 600; }
+div.content > :first-child { margin-top: 0; }
+div.content > :last-child, div.content blockquote > :last-child { margin-bottom: 0; }
+
+:global(.dark) div.content { color: #bac3d4; }
+:global(.dark) div.content :is(h1, h2, h3, h4, h5, h6) { color: #d6dce8; }
+:global(.dark) div.content code { color: #b8cef6; background: #303949; }
+:global(.dark) div.content pre { border-color: #3b4453; background: #1c2330; }
+:global(.dark) div.content pre code { color: inherit; background: transparent; }
+:global(.dark) div.content blockquote { border-color: #4c6496; color: #a9b8d3; background: #222a37; }
+:global(.dark) div.content a { color: #9bb5ed; }
+:global(.dark) div.content :is(th, td, hr) { border-color: #3b4453; }
+:global(.dark) div.content th { background: #293344; }
