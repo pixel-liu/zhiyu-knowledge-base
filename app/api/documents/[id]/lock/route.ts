@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { setDocumentTreeLocked } from "@/lib/documents-db";
+import { setDocumentLocked } from "@/lib/documents-db";
 import { z } from "zod";
 
 export const runtime = "nodejs";
@@ -13,7 +13,7 @@ export async function POST(request: NextRequest, context: Context) {
   if (!parsed.success) return NextResponse.json({ message: "锁定参数无效" }, { status: 400 });
   const { id } = await context.params;
   try {
-    const ids = setDocumentTreeLocked(id, parsed.data.isLocked);
+    const ids = setDocumentLocked(id, parsed.data.isLocked);
     if (!ids) return NextResponse.json({ message: "文档不存在" }, { status: 404 });
     return NextResponse.json({ ids, isLocked: parsed.data.isLocked });
   } catch (error) {

@@ -334,19 +334,13 @@ function descendantIds(db: DatabaseSync, id: string) {
   return rows.map((row) => row.id);
 }
 
-export function setDocumentTreeLocked(id: string, isLocked: boolean) {
+export function setDocumentLocked(id: string, isLocked: boolean) {
   const db = getDatabase();
   const existing = getDocument(id);
   if (!existing || existing.isDeleted) return null;
-  const ids = descendantIds(db, id);
-  const updatedAt = now();
-  const update = db.prepare("UPDATE documents SET is_locked = ?, updated_at = ? WHERE id = ?");
-  db.exec("BEGIN");
-  try {
-    for (const documentId of ids) update.run(Number(isLocked), updatedAt, documentId);
-    db.exec("COMMIT");
-  } catch (error) { db.exec("ROLLBACK"); throw error; }
-  return ids;
+  db.prepare("UPDATE documents SET is_locked = ?, updated_at = ? WHERE id = ?")
+    .run(Number(isLocked), now(), id);
+  return [id];
 }
 
 export function softDeleteDocument(id: string) {

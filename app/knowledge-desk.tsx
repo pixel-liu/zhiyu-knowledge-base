@@ -164,6 +164,9 @@ export function KnowledgeDesk({ initialView = "home" }: { initialView?: Workspac
   const [query, setQuery] = useState("");
   const [searchTag, setSearchTag] = useState("");
   const [tagDraft, setTagDraft] = useState("");
+  const [lockingId, setLockingId] = useState<string | null>(null);
+  const lockPending = useRef(false);
+  const documentReadOnly = Boolean(selected?.isLocked || selected?.id === lockingId);
   const [searchResults, setSearchResults] = useState<DocumentSummary[]>([]);
   const [trash, setTrash] = useState<DocumentSummary[]>([]);
   const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
@@ -192,11 +195,11 @@ export function KnowledgeDesk({ initialView = "home" }: { initialView?: Workspac
   const parentOptions = useMemo(() => documentParentOptions(documents, childrenByParent), [documents, childrenByParent]);
 
   const onEditorChange = useCallback((content: string) => {
-    if (!activeDocumentId) return;
+    if (!activeDocumentId || selected?.isLocked) return;
     save(activeDocumentId, { content });
     const items = headingsFrom(content);
     setLiveOutline((current) => current?.id === activeDocumentId && JSON.stringify(current.items) === JSON.stringify(items) ? current : { id: activeDocumentId, items });
-  }, [save, activeDocumentId]);
+  }, [save, activeDocumentId, selected?.isLocked]);
   const toggleExpanded = useCallback((id: string) => setExpanded((items) => {
     const next = new Set(items);
     if (next.has(id)) next.delete(id); else next.add(id);
@@ -353,13 +356,13 @@ export function KnowledgeDesk({ initialView = "home" }: { initialView?: Workspac
     if (event.key !== "Enter" && event.key !== ",") return;
     event.preventDefault();
     const tag = tagDraft.trim().replace(/^#/, "").replace(/,/g, "");
-    if (!selected || !tag || selected.tags.includes(tag)) { setTagDraft(""); return; }
+    if (!selected || documentReadOnly || !tag || selected.tags.includes(tag)) { setTagDraft(""); return; }
     save(selected.id, { tags: [...selected.tags, tag].slice(0, 30) });
     setTagDraft("");
   };
 
   const removeTag = (tag: string) => {
-    if (selected) save(selected.id, { tags: selected.tags.filter((item) => item !== tag) });
+    if (selected && !documentReadOnly) save(selected.id, { tags: selected.tags.filter((item) => item !== tag) });
   };
 
   const importBackupFile = async (event: ReactChangeEvent<HTMLInputElement>) => {
@@ -450,9 +453,9 @@ export function KnowledgeDesk({ initialView = "home" }: { initialView?: Workspac
   });
   const moveDocument = useStableCallback(async (id: string, parentId: string | null, confirmed = false) => {
     const source = documents.find((item) => item.id === id);
-    if (!source || source.id === parentId || source.parentId === parentId) return;
+    if (!source || source.isLocked || source.id === lockingId || source.id === parentId || source.parentId === parentId) return;
     const parent = parentId ? documents.find((item) => item.id === parentId) : null;
-    if (parentId && !parent) return;
+    if (parentId && (!parent || parent.isLocked || parent.id === lockingId)) return;
     let ancestor = parent;
     while (ancestor) {
       if (ancestor.id === id) return;
@@ -470,7 +473,7 @@ export function KnowledgeDesk({ initialView = "home" }: { initialView?: Workspac
   });
   const togglePin = async (id: string) => {
     const target = documents.find((item) => item.id === id);
-    if (!target) return;
+    if (!target || target.isLocked || target.id === lockingId) return;
     const next = !target.isPinned;
     updateLocal(id, { isPinned: next });
     setContextMenu(null);
@@ -479,7 +482,7 @@ export function KnowledgeDesk({ initialView = "home" }: { initialView?: Workspac
   };
   const requestRemove = (id = selected?.id) => {
     const target = documents.find((item) => item.id === id);
-    if (target) setDeleteTarget(target);
+    if (target && !target.isLocked && target.id !== lockingId) setDeleteTarget(target);
   };
   const remove = async () => {
     const target = deleteTarget;
@@ -497,18 +500,23 @@ export function KnowledgeDesk({ initialView = "home" }: { initialView?: Workspac
     setTrash(await readJson<DocumentSummary[]>(await fetch("/api/documents?deletedOnly=true")));
   };
   const toggleDocumentLock = async () => {
-    if (!selected) return;
+    if (!selected || lockPending.current) return;
+    lockPending.current = true;
+    setLockingId(selected.id);
     try {
-      const ready = await flushSaves();
-      if (!ready) { setError("未能完成保存，暂不能锁定文档"); return; }
       const isLocked = !selected.isLocked;
+      // Failed drafts from older clients must never prevent unlocking.
+      if (isLocked && !await flushSaves()) { setError("未能完成保存，暂不能锁定文档"); return; }
       const result = await readJson<{ ids: string[]; isLocked: boolean }>(await fetch(`/api/documents/${selected.id}/lock`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isLocked }),
       }));
       const ids = new Set(result.ids);
       setDocuments((items) => items.map((item) => ids.has(item.id) ? { ...item, isLocked: result.isLocked } : item));
-      setStatus(result.isLocked ? "已锁定当前文档及子文档" : "已解除当前文档及子文档的锁定");
+      setError("");
+      setStatus(result.isLocked ? "已锁定当前文档" : "已解除当前文档的锁定");
+      if (!result.isLocked) await flushSaves();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "更新锁定状态失败"); }
+    finally { lockPending.current = false; setLockingId(null); }
   };
   const clearTrash = async () => {
     if (!trash.length || purgingTrash || !window.confirm("确定要永久删除回收站中的所有文档吗？此操作无法撤销。")) return;
@@ -531,6 +539,7 @@ export function KnowledgeDesk({ initialView = "home" }: { initialView?: Workspac
     setTrash((items) => items.filter((item) => item.id !== id)); await loadDocuments(); choose(restored.id);
   };
   const rename = (id: string) => {
+    if (documents.find((item) => item.id === id)?.isLocked || id === lockingId) return;
     choose(id); setContextMenu(null);
     window.setTimeout(() => { titleInput.current?.focus(); titleInput.current?.select(); }, 0);
   };
@@ -610,8 +619,8 @@ export function KnowledgeDesk({ initialView = "home" }: { initialView?: Workspac
     {view === "home" && <KnowledgeHome documents={documents} loaded={status !== "正在载入"} onNavigate={(event, href) => void navigate(event, href)} />}
     {view !== "home" && view !== "documents" && <main className="workspace-tool"><nav className="workspace-breadcrumb" aria-label="当前位置"><Link prefetch={false} href="/" onClick={(event) => void navigate(event, "/")}><ArrowLeft size={15} />返回导航</Link><ChevronRight size={13} /><span>{toolLabels[view]}</span></nav><KnowledgeLab key={view} tool={view} documents={documents} currentId={selected?.id ?? null} onCurrentChange={selectVersionDocument} beforeOpen={flushSaves} onSelect={(id, blockIndex) => { if (blockIndex !== undefined) setSourceLocation({ id, blockIndex }); choose(id); }} onCreate={(document) => { setDocuments((items) => [...items, rememberDocument(document)]); choose(document.id); }} onRestore={(document) => { applyServerDocument(document); setLiveOutline({ id: document.id, items: headingsFrom(document.content) }); knowledge.refresh(); }} /></main>}
     {view === "documents" && <div className={`doc-layout ${resizingPane ? "is-resizing" : ""} ${sidebarOpen ? "" : "is-sidebar-collapsed"}`} style={{ "--sidebar-width": `${sidebarWidth}px`, "--outline-width": `${outlineWidth}px` } as CSSProperties}>
-      {sidebarOpen && <><aside className="doc-sidebar"><div className="doc-sidebar-tools"><button className="doc-new" onClick={() => create()}><FilePlus2 size={16} />新建文档</button><button className="doc-search" onClick={() => setSearchOpen(true)}><Search size={16} /><span>搜索</span><kbd>Ctrl K</kbd></button></div><div className="doc-sidebar-label"><span>我的文档库</span><span className="doc-sidebar-label-actions"><button onClick={() => create()} title="新建文档"><FilePlus2 size={15} /></button><button onClick={() => setSidebarOpen(false)} title="收起左侧面板" aria-label="收起左侧面板"><PanelLeftClose size={15} /></button></span></div><nav ref={treeRef} className="doc-tree" aria-label="文档树" onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }} onDrop={(event) => { event.preventDefault(); const id = event.dataTransfer.getData("text/plain"); if (id) void moveDocument(id, null); }}><DocumentTree childrenByParent={childrenByParent} selectedId={selected?.id ?? null} expanded={expanded} onSelect={choose} onToggle={toggleExpanded} onNewChild={create} onReorder={reorder} onContextMenu={openContextMenu} onMove={moveDocument} /></nav><div className="doc-sidebar-bottom" role="group" aria-label="文档栏操作"><button title="回收站" aria-label="回收站" onClick={() => void openTrash()}><Trash2 size={16} /><span>回收站</span></button><button className={selected?.isLocked ? "is-active" : ""} title={selected ? (selected.isLocked ? "解除当前文档及子文档的锁定" : "锁定当前文档及子文档") : "请先选择文档"} aria-label={selected?.isLocked ? "解除当前文档及子文档的锁定" : "锁定当前文档及子文档"} disabled={!selected} onClick={() => void toggleDocumentLock()}>{selected?.isLocked ? <LockKeyhole size={16} /> : <Lock size={16} />}<span>{selected?.isLocked ? "已锁定" : "锁定文档"}</span></button></div></aside>{paneDivider("sidebar")}</>}
-<section className="doc-workbench"><button className="doc-collapse" onClick={() => setSidebarOpen((value) => !value)} title="收起/展开文档库">{sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}</button>{selected ? <main className="doc-canvas"><div className="doc-breadcrumb">我的文档库 <ChevronRight size={14} /> {selected.parentId ? documents.find((item) => item.id === selected.parentId)?.title || "子文档" : "文档"}</div><div className="doc-title-row"><input ref={titleInput} className="doc-title-input" value={selected.title} onChange={(event) => save(selected.id, { title: event.target.value })} placeholder="未命名文档" aria-label="文档标题" /><div className="doc-header-actions" role="group" aria-label="文档操作"><button type="button" className={`doc-add-review${knowledge.review ? " is-enrolled" : ""}`} disabled={knowledge.reviewLoading || knowledge.reviewBusy || Boolean(knowledge.review)} onClick={() => void changeReviewStatus("learning")}>{knowledge.review ? <Check size={16} /> : <RotateCcw size={16} />}<span>{knowledge.reviewBusy ? "加入中…" : knowledge.reviewLoading ? "加载中…" : knowledge.review ? "已加入复习" : "加入复习"}</span></button><button type="button" className="doc-move-to-trash" onClick={() => requestRemove()}><Trash2 size={15} /><span>移入回收站</span></button></div></div>{knowledge.reviewError && <p className="doc-knowledge-error" role="alert">{knowledge.reviewError}<button type="button" disabled={knowledge.reviewBusy} onClick={() => void changeReviewStatus(knowledge.failedReviewStatus ?? "learning")}>重试</button></p>}<div className="doc-meta"><span>{selected.icon || "📄"}</span><span>最后修改：{formatTime(selected.updatedAt)}</span></div><div className="doc-tags"><span className="doc-tags-label">标签</span>{selected.tags.map((tag) => <button type="button" className="doc-tag" key={tag} onClick={() => removeTag(tag)} title="移除标签">#{tag}<X size={11} /></button>)}<input value={tagDraft} onChange={(event) => setTagDraft(event.target.value)} onKeyDown={addTag} placeholder="输入标签后按回车" aria-label="添加标签" /></div><div className="doc-editor" id="document-editor">{initialContent === null ? <p className="doc-body-loading" role="status">正在加载文档…</p> : <DocumentEditor key={selected.id} content={initialContent} onChange={onEditorChange} documents={documents} bindings={knowledge.data?.connections.outgoing} onSelect={choose} />}</div><DocumentKnowledgePanel key={selected.id} data={knowledge.data} error={knowledge.error} busy={knowledge.reviewBusy} onSelect={choose} onRefresh={knowledge.refresh} onStatusChange={changeReviewStatus} /></main> : <main className="doc-empty"><FileText size={34} /><h1>创建第一篇文档</h1><p>从左侧新建文档，内容会自动保存到本机。</p><button className="doc-new" onClick={() => create()}><FilePlus2 size={16} />新建文档</button></main>}</section>
+      {sidebarOpen && <><aside className="doc-sidebar"><div className="doc-sidebar-tools"><button className="doc-new" onClick={() => create()}><FilePlus2 size={16} />新建文档</button><button className="doc-search" onClick={() => setSearchOpen(true)}><Search size={16} /><span>搜索</span><kbd>Ctrl K</kbd></button></div><div className="doc-sidebar-label"><span>我的文档库</span><span className="doc-sidebar-label-actions"><button onClick={() => create()} title="新建文档"><FilePlus2 size={15} /></button><button onClick={() => setSidebarOpen(false)} title="收起左侧面板" aria-label="收起左侧面板"><PanelLeftClose size={15} /></button></span></div><nav ref={treeRef} className="doc-tree" aria-label="文档树" onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }} onDrop={(event) => { event.preventDefault(); const id = event.dataTransfer.getData("text/plain"); if (id) void moveDocument(id, null); }}><DocumentTree childrenByParent={childrenByParent} selectedId={selected?.id ?? null} expanded={expanded} onSelect={choose} onToggle={toggleExpanded} onNewChild={create} onReorder={reorder} onContextMenu={openContextMenu} onMove={moveDocument} /></nav><div className="doc-sidebar-bottom" role="group" aria-label="文档栏操作"><button title="回收站" aria-label="回收站" onClick={() => void openTrash()}><Trash2 size={16} /><span>回收站</span></button><button className={selected?.isLocked ? "is-active" : ""} title={selected ? (selected.isLocked ? "解除当前文档的锁定" : "锁定当前文档") : "请先选择文档"} aria-label={selected?.isLocked ? "解除当前文档的锁定" : "锁定当前文档"} disabled={!selected || lockingId !== null} onClick={() => void toggleDocumentLock()}>{selected?.isLocked ? <LockKeyhole size={16} /> : <Lock size={16} />}<span>{selected?.isLocked ? "已锁定" : "锁定文档"}</span></button></div></aside>{paneDivider("sidebar")}</>}
+<section className="doc-workbench"><button className="doc-collapse" onClick={() => setSidebarOpen((value) => !value)} title="收起/展开文档库">{sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}</button>{selected ? <main className="doc-canvas"><div className="doc-breadcrumb">我的文档库 <ChevronRight size={14} /> {selected.parentId ? documents.find((item) => item.id === selected.parentId)?.title || "子文档" : "文档"}</div><div className="doc-title-row"><input ref={titleInput} className="doc-title-input" value={selected.title} readOnly={documentReadOnly} onChange={(event) => { if (!documentReadOnly) save(selected.id, { title: event.target.value }); }} placeholder="未命名文档" aria-label="文档标题" /><div className="doc-header-actions" role="group" aria-label="文档操作"><button type="button" className={`doc-add-review${knowledge.review ? " is-enrolled" : ""}`} disabled={knowledge.reviewLoading || knowledge.reviewBusy || Boolean(knowledge.review)} onClick={() => void changeReviewStatus("learning")}>{knowledge.review ? <Check size={16} /> : <RotateCcw size={16} />}<span>{knowledge.reviewBusy ? "加入中…" : knowledge.reviewLoading ? "加载中…" : knowledge.review ? "已加入复习" : "加入复习"}</span></button><button type="button" className="doc-move-to-trash" disabled={documentReadOnly} onClick={() => requestRemove()}><Trash2 size={15} /><span>移入回收站</span></button></div></div>{knowledge.reviewError && <p className="doc-knowledge-error" role="alert">{knowledge.reviewError}<button type="button" disabled={knowledge.reviewBusy} onClick={() => void changeReviewStatus(knowledge.failedReviewStatus ?? "learning")}>重试</button></p>}<div className="doc-meta"><span>{selected.icon || "📄"}</span><span>最后修改：{formatTime(selected.updatedAt)}</span></div><div className="doc-tags"><span className="doc-tags-label">标签</span>{selected.tags.map((tag) => <button type="button" className="doc-tag" key={tag} disabled={documentReadOnly} onClick={() => removeTag(tag)} title="移除标签">#{tag}<X size={11} /></button>)}<input value={tagDraft} disabled={documentReadOnly} onChange={(event) => setTagDraft(event.target.value)} onKeyDown={addTag} placeholder="输入标签后按回车" aria-label="添加标签" /></div><div className="doc-editor" id="document-editor">{initialContent === null ? <p className="doc-body-loading" role="status">正在加载文档…</p> : <DocumentEditor key={selected.id} content={initialContent} editable={!documentReadOnly} onChange={onEditorChange} documents={documents} bindings={knowledge.data?.connections.outgoing} onSelect={choose} />}</div><DocumentKnowledgePanel key={selected.id} data={knowledge.data} error={knowledge.error} busy={knowledge.reviewBusy} onSelect={choose} onRefresh={knowledge.refresh} onStatusChange={changeReviewStatus} /></main> : <main className="doc-empty"><FileText size={34} /><h1>创建第一篇文档</h1><p>从左侧新建文档，内容会自动保存到本机。</p><button className="doc-new" onClick={() => create()}><FilePlus2 size={16} />新建文档</button></main>}</section>
       {selected && <>{outlineOpen && paneDivider("outline")}<aside className={`doc-outline ${outlineOpen ? "" : "is-collapsed"}`}><div className="doc-outline-title"><span>大纲</span><button onClick={() => setOutlineOpen((value) => !value)} title={outlineOpen ? "收起右侧目录" : "展开右侧目录"} aria-label={outlineOpen ? "收起右侧目录" : "展开右侧目录"}>{outlineOpen ? <PanelRightClose size={19} /> : <PanelRightOpen size={19} />}</button></div>{outlineOpen && (outline.length ? <nav>{outline.map((item) => <a key={item.id} className={`outline-level-${item.level} ${activeOutlineId === item.id ? "is-active" : ""}`} href="#document-editor" aria-label={item.text} onMouseEnter={(event) => { const rect = event.currentTarget.getBoundingClientRect(); setOutlineTooltip({ text: item.text, x: rect.left + rect.width / 2, y: rect.top - 8 }); }} onMouseLeave={() => setOutlineTooltip(null)} onClick={(event) => { event.preventDefault(); setOutlineTooltip(null); setActiveOutlineId(item.id); document.querySelectorAll("#document-editor [data-content-type='heading']")[item.headingIndex]?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>{item.text}</a>)}</nav> : <p>为正文添加标题后，会在这里显示文档大纲。</p>)}</aside></>}
     </div>}
     {error && <div className="doc-toast">{error}<button onClick={() => setError("")}><X size={15} /></button></div>}
@@ -633,7 +642,7 @@ export function KnowledgeDesk({ initialView = "home" }: { initialView?: Workspac
       </AlertDialogContent>
     </AlertDialog>}
     {outlineTooltip && <div className="doc-outline-tooltip" role="tooltip" style={{ left: outlineTooltip.x, top: outlineTooltip.y }}>{outlineTooltip.text}</div>}
-    {contextMenu && <div className="doc-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}><button onClick={() => void togglePin(contextMenu.id)}><Pin size={15} />{documents.find((item) => item.id === contextMenu.id)?.isPinned ? "取消置顶" : "置顶文档"}</button><button onClick={() => rename(contextMenu.id)}><PencilLine size={15} />重命名</button><button className="danger" onClick={() => { const id = contextMenu.id; setContextMenu(null); requestRemove(id); }}><Trash2 size={15} />移入回收站</button></div>}
+    {contextMenu && <div className="doc-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}><button disabled={documents.find((item) => item.id === contextMenu.id)?.isLocked || contextMenu.id === lockingId} onClick={() => void togglePin(contextMenu.id)}><Pin size={15} />{documents.find((item) => item.id === contextMenu.id)?.isPinned ? "取消置顶" : "置顶文档"}</button><button disabled={documents.find((item) => item.id === contextMenu.id)?.isLocked || contextMenu.id === lockingId} onClick={() => rename(contextMenu.id)}><PencilLine size={15} />重命名</button><button className="danger" disabled={documents.find((item) => item.id === contextMenu.id)?.isLocked || contextMenu.id === lockingId} onClick={() => { const id = contextMenu.id; setContextMenu(null); requestRemove(id); }}><Trash2 size={15} />移入回收站</button></div>}
     {markdownImport && <div className="doc-modal-backdrop doc-confirm-backdrop" onMouseDown={() => !importingMarkdown && setMarkdownImport(null)}><section className="doc-import-modal" role="dialog" aria-modal="true" aria-labelledby="document-import-title" onMouseDown={(event) => event.stopPropagation()}><div className="doc-import-heading"><span><FileUp size={18} /></span><div><h2 id="document-import-title">{markdownImport.format === "json" ? "导入 JSON" : "导入 Markdown"}</h2><p title={markdownImport.fileName}>{markdownImport.fileName}</p></div></div><label><span>文档标题</span><input autoFocus value={markdownImport.title} maxLength={200} onChange={(event) => setMarkdownImport((current) => current ? { ...current, title: event.target.value } : current)} /></label><label><span>保存位置</span><select value={markdownImport.parentId ?? ""} onChange={(event) => setMarkdownImport((current) => current ? { ...current, parentId: event.target.value || null } : current)}><option value="">顶级文档（默认新增）</option>{parentOptions.map(({ document, depth }) => <option key={document.id} value={document.id}>{`${"　".repeat(depth)}${depth ? "└ " : ""}${document.title || "未命名文档"}`}</option>)}</select><small>{markdownImport.parentId ? `将成为「${documents.find((item) => item.id === markdownImport.parentId)?.title || "所选文档"}」的子文档` : "将在文档库顶层新建一篇文档"}</small></label><div className="doc-confirm-actions"><button disabled={importingMarkdown} onClick={() => setMarkdownImport(null)}>取消</button><button className="primary" disabled={importingMarkdown || !markdownImport.title.trim()} onClick={() => void importMarkdownFile()}>{importingMarkdown ? "导入中…" : "导入文档"}</button></div></section></div>}
     {backupConfirm && <div className="doc-modal-backdrop doc-confirm-backdrop" onMouseDown={() => setBackupConfirm(null)}><section className="doc-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="backup-confirm-title" onMouseDown={(event) => event.stopPropagation()}><div className="doc-confirm-icon"><Download size={20} /></div><div><h2 id="backup-confirm-title">确认导出备份？</h2><p>{backupConfirm.all ? "将导出整个文档库。" : `将只导出当前文档「${selected?.title || "未命名文档"}」。`}格式：{backupConfirm.format === "json" ? "JSON" : "Markdown"}。</p></div><div className="doc-confirm-actions"><button onClick={() => setBackupConfirm(null)}>取消</button><button className="danger" onClick={performExport}>确认导出</button></div></section></div>}    {searchOpen && <div className="doc-modal-backdrop" onMouseDown={() => setSearchOpen(false)}><section className="doc-search-modal" onMouseDown={(event) => event.stopPropagation()}><div><Search size={19} /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索标题和正文内容" /><button onClick={() => setSearchOpen(false)}><X size={18} /></button></div><div className="doc-search-filters"><button className={!searchTag ? "is-active" : ""} onClick={() => setSearchTag("")}>全部</button>{tags.map((tag) => <button key={tag} className={searchTag === tag ? "is-active" : ""} onClick={() => setSearchTag(tag)}>#{tag}</button>)}</div><small>{query || searchTag ? `${searchResults.length} 个匹配结果` : "最近编辑"}</small><nav>{(query || searchTag) && !searchResults.length ? <p>没有找到相关文档</p> : searchResults.map((item) => <button key={item.id} onClick={() => choose(item.id)}><span>{item.icon || "📄"}</span><b>{item.title}</b><em>{item.snippet || "空文档"}</em></button>)}</nav></section></div>}
     {trashOpen && <div className="doc-modal-backdrop" onMouseDown={() => setTrashOpen(false)}><section className="doc-trash-modal" onMouseDown={(event) => event.stopPropagation()}><div className="doc-modal-title"><span><Trash2 size={18} />回收站</span><div className="doc-trash-actions"><button className="doc-trash-clear" disabled={!trash.length || purgingTrash} onClick={() => void clearTrash()}><Trash2 size={14} />{purgingTrash ? "删除中…" : "一键删除"}</button><button onClick={() => setTrashOpen(false)} aria-label="关闭回收站"><X size={18} /></button></div></div>{trash.length ? trash.map((item) => <div className="doc-trash-item" key={item.id}><span>{item.icon || "📄"}</span><div><b>{item.title}</b><small>删除于 {item.deletedAt ? formatTime(item.deletedAt) : "刚刚"}</small></div><button onClick={() => void restore(item.id)}><Undo2 size={15} />恢复</button></div>) : <p className="doc-modal-empty">回收站是空的。</p>}</section></div>}

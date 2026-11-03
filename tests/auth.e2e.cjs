@@ -58,6 +58,14 @@ async function main() {
       assert.equal((await send(resource)).status, 401, resource);
     }
     const post = (resource, body) => send(resource, { method:"POST", headers:{ Cookie:cookie, Origin:base, "Content-Type":"application/json" }, body:JSON.stringify(body) });
+    const childDocument = await (await post("/api/documents", { title: "锁定验证子文档", parentId: document.id })).json();
+    const lock = await post(`/api/documents/${document.id}/lock`, { isLocked: true });
+    assert.deepEqual((await lock.json()).ids, [document.id]);
+    const patchDocument = (id, body) => send(`/api/documents/${id}`, { method: "PATCH", headers: { Cookie: cookie, Origin: base, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    assert.equal((await patchDocument(document.id, { content: "锁定后不能修改" })).status, 400);
+    assert.equal((await patchDocument(childDocument.id, { title: "父文档锁定时子文档仍可编辑" })).status, 200);
+    assert.equal((await post(`/api/documents/${document.id}/lock`, { isLocked: false })).status, 200);
+    assert.equal((await patchDocument(document.id, { tags: ["解锁后可编辑"] })).status, 200);
     const linked = await (await post("/api/documents", { title:"关联验证", content:JSON.stringify([{ type:"paragraph", content:[{ type:"link", href:`/?document=${document.id}`, content:"[[登录验证文档]]" }] }]) })).json();
     const connections = await (await send(`/api/documents/${document.id}/knowledge`, { headers:{ Cookie:cookie } })).json();
     assert.ok(connections.connections.backlinks.some((item) => item.id === linked.id));

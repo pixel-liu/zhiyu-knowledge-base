@@ -10,7 +10,7 @@ module.exports = function loadTypeScript(relativePath, overrides = {}) {
   function compile(filename) {
   if (cache.has(filename)) return cache.get(filename).exports;
   const source = ts.transpileModule(fs.readFileSync(filename, "utf8"), {
-    compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS, esModuleInterop: true },
+    compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS, esModuleInterop: true, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
   const compiledModule = { exports: {} };
   cache.set(filename, compiledModule);

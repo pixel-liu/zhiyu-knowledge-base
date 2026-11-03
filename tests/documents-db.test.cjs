@@ -32,14 +32,20 @@ test("document summaries, selective updates, search and atomic index updates", (
   assert.ok(summaries.every((item) => !("content" in item) && !("plainText" in item)));
   assert.equal(db.getDocument(a.id).content, body);
 
-  const lockedIds = db.setDocumentTreeLocked(a.id, true);
-  assert.deepEqual(new Set(lockedIds), new Set([a.id, b.id]));
+  const lockedIds = db.setDocumentLocked(a.id, true);
+  assert.deepEqual(new Set(lockedIds), new Set([a.id]));
   assert.equal(db.getDocument(a.id).isLocked, true);
-  assert.equal(db.getDocument(b.id).isLocked, true);
-  assert.throws(() => db.updateDocument(b.id, { title: "不能改" }), /已锁定/);
+  assert.equal(db.getDocument(b.id).isLocked, false);
+  assert.throws(() => db.updateDocument(a.id, { title: "不能改" }), /已锁定/);
+  assert.throws(() => db.updateDocument(a.id, { content: "不能改正文" }), /已锁定/);
+  assert.throws(() => db.updateDocument(a.id, { tags: ["不能改"] }), /已锁定/);
+  assert.equal(db.updateDocument(b.id, { title: "子文档仍可编辑" }).title, "子文档仍可编辑");
+  db.setDocumentLocked(b.id, true);
   assert.throws(() => db.createDocument({ parentId: a.id }), /已锁定/);
   assert.throws(() => db.softDeleteDocument(a.id), /已锁定/);
-  db.setDocumentTreeLocked(a.id, false);
+  db.setDocumentLocked(a.id, false);
+  assert.equal(db.getDocument(b.id).isLocked, true, "解锁父文档不改变子文档状态");
+  db.setDocumentLocked(b.id, false);
 
   statements.length = 0;
   db.updateDocument(b.id, { isPinned: true, tags: ["test"] });
