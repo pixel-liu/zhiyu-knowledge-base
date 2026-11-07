@@ -6,6 +6,7 @@ export type DocumentSummary = {
   tags: string[];
   sortOrder: number;
   isPinned: boolean;
+  isStarred: boolean;
   isLocked: boolean;
   isDeleted: boolean;
   createdAt: string;
@@ -15,9 +16,9 @@ export type DocumentSummary = {
 };
 
 export type DocumentRecord = DocumentSummary & { content: string; plainText: string };
-export type DocumentPatch = Partial<Pick<DocumentRecord, "title" | "icon" | "tags" | "content" | "parentId" | "isPinned">>;
+export type DocumentPatch = Partial<Pick<DocumentRecord, "title" | "icon" | "tags" | "content" | "parentId" | "isPinned" | "isStarred">>;
 
 export function documentSummary(document: DocumentRecord | DocumentSummary): DocumentSummary {
-  const { id, parentId, title, icon, tags, sortOrder, isPinned, isLocked, isDeleted, createdAt, updatedAt, deletedAt, snippet } = document;
-  return { id, parentId, title, icon, tags, sortOrder, isPinned, isLocked, isDeleted, createdAt, updatedAt, deletedAt, ...(snippet === undefined ? {} : { snippet }) };
+  const { id, parentId, title, icon, tags, sortOrder, isPinned, isStarred, isLocked, isDeleted, createdAt, updatedAt, deletedAt, snippet } = document;
+  return { id, parentId, title, icon, tags, sortOrder, isPinned, isStarred, isLocked, isDeleted, createdAt, updatedAt, deletedAt, ...(snippet === undefined ? {} : { snippet }) };
 }

@@ -12,7 +12,8 @@ const backupSchema = z.object({
   documents: z.array(z.object({
     id: z.string(), parentId: z.string().nullable(), title: z.string(), icon: z.string().nullable(),
     tags: z.array(z.string()).optional().default([]), content: z.string(), plainText: z.string().optional().default(""),
-    sortOrder: z.number(), isPinned: z.boolean(), isDeleted: z.boolean(), createdAt: z.string(), updatedAt: z.string(), deletedAt: z.string().nullable(),
+    sortOrder: z.number(), isPinned: z.boolean(), isStarred: z.boolean().optional(),
+    isDeleted: z.boolean(), createdAt: z.string(), updatedAt: z.string(), deletedAt: z.string().nullable(),
   })).max(10000),
   settings: z.record(z.string(), z.string()).optional(),
   reviews: z.array(z.object({

@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { DocumentRecord, DocumentSummary } from "./document-types";
+import type { DocumentPatch, DocumentRecord, DocumentSummary } from "./document-types";
 import { initializeKnowledgeTables, resolveUnboundLinks, syncDocumentLinks } from "./document-link-index";
 import { remapDocumentLinks } from "./document-links";
 import { initializeDocumentVersions, recordDocumentVersion } from "./document-versions";
@@ -18,6 +18,7 @@ type DocumentRow = {
   plain_text: string;
   sort_order: number;
   is_pinned: number;
+  is_starred: number;
   is_locked: number;
   is_deleted: number;
   created_at: string;
@@ -50,6 +51,7 @@ const toSummary = (row: Omit<DocumentRow, "content" | "plain_text">): DocumentSu
   tags: parseTags(row.tags),
   sortOrder: row.sort_order,
   isPinned: Boolean(row.is_pinned),
+  isStarred: Boolean(row.is_starred),
   isLocked: Boolean(row.is_locked),
   isDeleted: Boolean(row.is_deleted),
   createdAt: row.created_at,
@@ -58,7 +60,7 @@ const toSummary = (row: Omit<DocumentRow, "content" | "plain_text">): DocumentSu
 });
 
 const toRecord = (row: DocumentRow): DocumentRecord => ({ ...toSummary(row), content: row.content, plainText: row.plain_text });
-const summaryColumns = "id, parent_id, title, icon, tags, sort_order, is_pinned, is_locked, is_deleted, created_at, updated_at, deleted_at";
+const summaryColumns = "id, parent_id, title, icon, tags, sort_order, is_pinned, is_starred, is_locked, is_deleted, created_at, updated_at, deleted_at";
 
 const emptyContent = () => JSON.stringify([
   { type: "paragraph", content: [] },
@@ -116,6 +118,7 @@ export function getDatabase() {
       plain_text TEXT NOT NULL DEFAULT '',
     sort_order INTEGER NOT NULL DEFAULT 0,
       is_pinned INTEGER NOT NULL DEFAULT 0,
+      is_starred INTEGER NOT NULL DEFAULT 0,
       is_locked INTEGER NOT NULL DEFAULT 0,
       is_deleted INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
@@ -146,6 +149,9 @@ export function getDatabase() {
   const columns = db.prepare("PRAGMA table_info(documents)").all() as Array<{ name: string }>;
   if (!columns.some((column) => column.name === "is_pinned")) {
     db.exec("ALTER TABLE documents ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!columns.some((column) => column.name === "is_starred")) {
+    db.exec("ALTER TABLE documents ADD COLUMN is_starred INTEGER NOT NULL DEFAULT 0");
   }
   if (!columns.some((column) => column.name === "tags")) {
     db.exec("ALTER TABLE documents ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'");
@@ -248,6 +254,7 @@ export function createDocument(input: { parentId?: string | null; title?: string
     plainText: contentToText(input.content ?? ""),
     sortOrder: siblingCount.count,
     isPinned: false,
+    isStarred: false,
     isLocked: false,
     isDeleted: false,
     createdAt: timestamp,
@@ -272,7 +279,7 @@ export function createDocument(input: { parentId?: string | null; title?: string
   return document;
 }
 
-export function updateDocument(id: string, patch: Partial<Pick<DocumentRecord, "title" | "icon" | "content" | "parentId" | "isPinned" | "tags">>, options: { forceVersion?: boolean } = {}) {
+export function updateDocument(id: string, patch: DocumentPatch, options: { forceVersion?: boolean } = {}) {
   const db = getDatabase();
   const existing = getDocument(id);
   if (!existing || existing.isDeleted) return null;
@@ -293,6 +300,7 @@ export function updateDocument(id: string, patch: Partial<Pick<DocumentRecord, "
     content: patch.content === undefined ? existing.content : patch.content,
     parentId: nextParentId,
     isPinned: patch.isPinned === undefined ? existing.isPinned : Boolean(patch.isPinned),
+    isStarred: patch.isStarred ?? existing.isStarred,
     updatedAt: now(),
   };
   const contentChanged = document.content !== existing.content;
@@ -308,6 +316,7 @@ export function updateDocument(id: string, patch: Partial<Pick<DocumentRecord, "
   if (document.icon !== existing.icon) changes.push(["icon", document.icon]);
   if (JSON.stringify(document.tags) !== JSON.stringify(existing.tags)) changes.push(["tags", JSON.stringify(document.tags)]);
   if (document.isPinned !== existing.isPinned) changes.push(["is_pinned", Number(document.isPinned)]);
+  if (document.isStarred !== existing.isStarred) changes.push(["is_starred", Number(document.isStarred)]);
   if (contentChanged) changes.push(["content", document.content], ["plain_text", document.plainText]);
   db.exec("BEGIN");
   try {
@@ -554,7 +563,7 @@ export type BackupReview = { document_id: string; stage: number; due_at: string;
 type BackupLink = { source_id: string; reference_key: string; target_id: string | null; target_title: string };
 type BackupVersion = { id: string; document_id: string; title: string; content: string; plain_text: string; created_at: string };
 type BackupInput = {
-  documents: Array<Pick<DocumentRecord, "id" | "parentId" | "title" | "icon" | "tags" | "content" | "plainText" | "sortOrder" | "isPinned" | "isDeleted" | "createdAt" | "updatedAt" | "deletedAt">>;
+  documents: Array<Pick<DocumentRecord, "id" | "parentId" | "title" | "icon" | "tags" | "content" | "plainText" | "sortOrder" | "isPinned" | "isDeleted" | "createdAt" | "updatedAt" | "deletedAt"> & { isStarred?: boolean }>;
   settings?: Record<string, string>;
   reviews?: BackupReview[];
   links?: BackupLink[];
@@ -566,8 +575,8 @@ export function importBackup(input: BackupInput) {
   const existing = new Set((db.prepare("SELECT id FROM documents").all() as Array<{ id: string }>).map((row) => row.id));
   const ids = new Map(input.documents.map((document) => [document.id, existing.has(document.id) ? crypto.randomUUID() : document.id]));
   const insert = db.prepare(`
-    INSERT INTO documents (id, parent_id, title, icon, tags, content, plain_text, sort_order, is_pinned, is_deleted, created_at, updated_at, deleted_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO documents (id, parent_id, title, icon, tags, content, plain_text, sort_order, is_pinned, is_starred, is_deleted, created_at, updated_at, deleted_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   db.exec("BEGIN");
   try {
@@ -575,7 +584,11 @@ export function importBackup(input: BackupInput) {
     db.exec("PRAGMA defer_foreign_keys = ON");
     for (const source of input.documents) {
       const content = remapDocumentLinks(source.content || emptyContent(), ids);
-      insert.run(ids.get(source.id)!, source.parentId ? ids.get(source.parentId) ?? null : null, source.title || "未命名文档", source.icon || "📄", JSON.stringify(parseTags(JSON.stringify(source.tags))), content, source.plainText || contentToText(content), Number(source.sortOrder) || 0, source.isPinned ? 1 : 0, source.isDeleted ? 1 : 0, source.createdAt || now(), source.updatedAt || now(), source.deletedAt || null);
+      insert.run(
+        ids.get(source.id)!, source.parentId ? ids.get(source.parentId) ?? null : null, source.title || "未命名文档", source.icon || "📄",
+        JSON.stringify(parseTags(JSON.stringify(source.tags))), content, source.plainText || contentToText(content), Number(source.sortOrder) || 0,
+        source.isPinned ? 1 : 0, source.isStarred ? 1 : 0, source.isDeleted ? 1 : 0, source.createdAt || now(), source.updatedAt || now(), source.deletedAt || null,
+      );
     }
     if (input.settings) {
       const setting = db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`);

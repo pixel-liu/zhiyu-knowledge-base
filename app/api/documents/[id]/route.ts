@@ -14,6 +14,7 @@ const patchSchema = z.object({
   content: z.string().max(10_000_000).optional(),
   parentId: z.string().trim().min(1).nullable().optional(),
   isPinned: z.boolean().optional(),
+  isStarred: z.boolean().optional(),
 }).strict();
 
 export async function GET(_request: NextRequest, context: Context) {

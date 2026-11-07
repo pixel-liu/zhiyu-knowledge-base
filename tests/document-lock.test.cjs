@@ -6,8 +6,8 @@ const load = require("./load-typescript.cjs");
 function harness(locked) {
   const slots = [], requests = [], saves = [], events = [];
   let cursor = 0, flushResult = true;
-  let documents = [{ id: "parent", title: "Parent", tags: ["tag"], isLocked: locked, updatedAt: new Date().toISOString() },
-    { id: "child", parentId: "parent", title: "Child", tags: [], isLocked: false }];
+  let documents = [{ id: "parent", parentId: null, title: "Parent", tags: ["tag"], isPinned: false, isStarred: false, isLocked: locked, updatedAt: new Date().toISOString() },
+    { id: "child", parentId: "parent", title: "Child", tags: [], isStarred: false, isLocked: false }];
   const react = {
     ...React,
     useState(initial) {
@@ -21,6 +21,7 @@ function harness(locked) {
   function Editor() {}
   const dummy = new Proxy({}, { get: (_, name) => name === "__esModule" ? true : () => null });
   const { KnowledgeDesk } = load("app/knowledge-desk.tsx", {
+    window: { innerWidth: 1024, innerHeight: 768 },
     fetch: (url, options) => {
       events.push("request");
       return new Promise((resolve) => requests.push({ url, options, resolve: (body, ok = true) => resolve({ ok, json: async () => body }) }));
@@ -32,13 +33,19 @@ function harness(locked) {
       if (name.endsWith("use-document-library")) return { useDocumentLibrary: () => ({
         documents, selected: documents[0], selectedId: "parent", initialContent: "[]", status: "已自动保存",
         setDocuments: (fn) => { documents = fn(documents); },
-        save: (...args) => saves.push(args), setError() {}, setStatus() {},
+        save: (id, patch) => {
+          saves.push([id, patch]);
+          documents = documents.map((item) => item.id === id ? { ...item, ...patch } : item);
+        },
+        setError() {}, setStatus() {},
         flushSaves: async () => { events.push("flush"); return flushResult; },
       }) };
       if (name.endsWith("use-document-knowledge")) return { useDocumentKnowledge: () => ({}) };
       if (name.endsWith("use-stable-callback")) return { useStableCallback: (fn) => fn };
       if (name.endsWith("use-tree-drag-auto-scroll")) return { useTreeDragAutoScroll: () => ({ current: null }) };
       if (name.endsWith("theme-provider")) return { useTheme: () => ({ resolvedTheme: "light" }) };
+      if (name === "@dnd-kit/utilities") return { CSS: { Transform: { toString: () => undefined } } };
+      if (name === "@dnd-kit/sortable") return { SortableContext: () => null, useSortable: () => ({}) };
       if (name.startsWith("@/components/") || name.startsWith("@dnd-kit/")) return dummy;
       return fallback(name);
     },
@@ -53,12 +60,18 @@ function harness(locked) {
     render() {
       cursor = 0;
       const all = nodes(KnowledgeDesk({ initialView: "documents" }));
+      const tree = all.find((node) => node.props?.childrenByParent);
       return {
         title: all.find((node) => node.props?.["aria-label"] === "文档标题"),
         tag: all.find((node) => node.props?.["aria-label"] === "添加标签"),
         removeTag: all.find((node) => node.props?.className === "doc-tag"),
         editor: all.find((node) => node.type === Editor),
         lock: all.find((node) => /^(解除当前文档的锁定|锁定当前文档)$/.test(node.props?.["aria-label"])),
+        contextMenu: all.find((node) => node.props?.className === "doc-context-menu"),
+        treeRow(id) {
+          const row = nodes(tree.type.type(tree.props)).find((node) => node.props?.document?.id === id);
+          return row.type(row.props);
+        },
       };
     },
     documents: () => documents,
@@ -76,6 +89,29 @@ test("locked documents disable body, title and tags before changes can enter the
   page.editor.props.onChange("blocked");
   page.removeTag.props.onClick();
   assert.equal(h.saves.length, 0);
+});
+
+test("the document menu toggles a trailing star on the target row", () => {
+  const h = harness(false);
+  const context = { preventDefault() {}, clientX: 1000, clientY: 760 };
+  h.render().treeRow("parent").props.onContextMenu(context);
+  let menu = h.render().contextMenu;
+  assert.equal(menu.props.style.top, 618);
+  const starAction = (label) => React.Children.toArray(menu.props.children)
+    .find((node) => node.props.children.includes(label));
+  starAction("标记星标").props.onClick();
+  assert.equal(h.saves[0][0], "parent");
+  assert.equal(h.saves[0][1].isStarred, true);
+  assert.equal(h.documents()[0].isPinned, false);
+  assert.equal(h.documents()[1].isStarred, false);
+  let row = h.render().treeRow("parent");
+  assert.equal(React.Children.toArray(row.props.children).at(-1).props["aria-label"], "已标记星标");
+  row.props.onContextMenu(context);
+  menu = h.render().contextMenu;
+  starAction("取消星标").props.onClick();
+  assert.equal(h.saves[1][1].isStarred, false);
+  row = h.render().treeRow("parent");
+  assert.ok(React.Children.toArray(row.props.children).every((node) => node.props.className !== "doc-tree-star"));
 });
 
 test("failed drafts do not block unlocking, and retry only happens after unlocking", async () => {

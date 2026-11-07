@@ -65,6 +65,7 @@ export class DocumentSaveQueue {
       if (typeof parsed.icon === "string" || parsed.icon === null) patch.icon = parsed.icon;
       if (Array.isArray(parsed.tags) && parsed.tags.every((tag) => typeof tag === "string")) patch.tags = parsed.tags;
       if (typeof parsed.isPinned === "boolean") patch.isPinned = parsed.isPinned;
+      if (typeof parsed.isStarred === "boolean") patch.isStarred = parsed.isStarred;
       // Replaying hierarchy changes from an old session could undo a newer move.
       this.enqueue(id, patch);
     } catch { this.options.onError("有一份本地草稿无法读取，请检查浏览器存储。"); }

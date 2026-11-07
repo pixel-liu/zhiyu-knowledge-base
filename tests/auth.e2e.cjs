@@ -59,13 +59,22 @@ async function main() {
     }
     const post = (resource, body) => send(resource, { method:"POST", headers:{ Cookie:cookie, Origin:base, "Content-Type":"application/json" }, body:JSON.stringify(body) });
     const childDocument = await (await post("/api/documents", { title: "锁定验证子文档", parentId: document.id })).json();
+    assert.equal(childDocument.isStarred, false);
     const lock = await post(`/api/documents/${document.id}/lock`, { isLocked: true });
     assert.deepEqual((await lock.json()).ids, [document.id]);
     const patchDocument = (id, body) => send(`/api/documents/${id}`, { method: "PATCH", headers: { Cookie: cookie, Origin: base, "Content-Type": "application/json" }, body: JSON.stringify(body) });
     assert.equal((await patchDocument(document.id, { content: "锁定后不能修改" })).status, 400);
+    assert.equal((await patchDocument(document.id, { isStarred: true })).status, 400);
     assert.equal((await patchDocument(childDocument.id, { title: "父文档锁定时子文档仍可编辑" })).status, 200);
     assert.equal((await post(`/api/documents/${document.id}/lock`, { isLocked: false })).status, 200);
     assert.equal((await patchDocument(document.id, { tags: ["解锁后可编辑"] })).status, 200);
+    assert.equal((await patchDocument(childDocument.id, { isStarred: "true" })).status, 400);
+    const starResponse = await patchDocument(childDocument.id, { isStarred: true });
+    assert.equal(starResponse.status, 200);
+    const starred = await starResponse.json();
+    assert.equal(starred.isStarred, true);
+    assert.equal(starred.isPinned, false);
+    assert.equal(starred.sortOrder, childDocument.sortOrder);
     const linked = await (await post("/api/documents", { title:"关联验证", content:JSON.stringify([{ type:"paragraph", content:[{ type:"link", href:`/?document=${document.id}`, content:"[[登录验证文档]]" }] }]) })).json();
     const connections = await (await send(`/api/documents/${document.id}/knowledge`, { headers:{ Cookie:cookie } })).json();
     assert.ok(connections.connections.backlinks.some((item) => item.id === linked.id));
@@ -79,7 +88,12 @@ async function main() {
     const backupResponse = await send("/api/backup?all=true", { headers:{ Cookie:cookie } });
     const backup = await backupResponse.json();
     assert.equal(backup.reviews.length, 1);
+    assert.equal(backup.documents.find((item) => item.id === childDocument.id).isStarred, true);
     assert.equal((await post("/api/backup", backup)).status, 200);
+    const { isStarred: omittedStar, ...oldDocument } = childDocument;
+    assert.equal(omittedStar, false);
+    assert.equal((await post("/api/backup", { documents: [{ ...oldDocument, title: "旧版备份验证", parentId: null }] })).status, 200);
+    assert.equal((await (await patchDocument(childDocument.id, { isStarred: false })).json()).isStarred, false);
     const removeReviews = (documentIds, headers = {}) => send("/api/reviews", {
       method: "DELETE", headers: { Cookie: cookie, Origin: base, "Content-Type": "application/json", ...headers }, body: JSON.stringify({ documentIds }),
     });
@@ -109,6 +123,9 @@ async function main() {
     const secondCookie = login.headers.get("set-cookie").split(";")[0];
     const documents = await (await send("/api/documents", { headers: { Cookie: secondCookie } })).json();
     assert.ok(documents.some((item) => item.id === document.id && item.title === "登录验证文档"));
+    assert.equal(documents.find((item) => item.id === childDocument.id).isStarred, false);
+    assert.equal(documents.find((item) => item.id !== childDocument.id && item.title === starred.title).isStarred, true);
+    assert.equal(documents.find((item) => item.title === "旧版备份验证").isStarred, false);
     await auth({ action: "logout" }, { Cookie: secondCookie });
     console.log("正式版本验证通过：登录与访问验证、双向链接、复习单项和批量删除、重新加入、旧评分拦截、备份导入，以及退出后重新登录。");
   } catch (error) {

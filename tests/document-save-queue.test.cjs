@@ -56,9 +56,10 @@ test("failed requests preserve newer edits and can be retried", async (t) => {
 test("draft recovery replays content and metadata without replaying stale hierarchy changes", async (t) => {
   const requests = [];
   const { queue, drafts } = setup(t, async (id, patch) => { requests.push({ id, patch }); return { ...patch, updatedAt: "ok" }; });
-  drafts.set("knowledge-desk:draft:a", JSON.stringify({ title: "Recovered", content: "draft", parentId: "old-parent" }));
+  drafts.set("knowledge-desk:draft:a", JSON.stringify({ title: "Recovered", content: "draft", isStarred: false, parentId: "old-parent" }));
   queue.restore("a");
   assert.equal(queue.getDraft("a").content, "draft");
+  assert.equal(queue.getDraft("a").isStarred, false);
   assert.equal(queue.getDraft("a").parentId, undefined);
   await queue.flush();
   assert.equal(requests.length, 1);

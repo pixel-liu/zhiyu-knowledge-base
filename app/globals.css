@@ -458,6 +458,9 @@ body {
 .doc-tree-row { height:30px; }
 .doc-tree-tools button,.doc-drag { height:26px; }
 .doc-tree-title { font-size:13px; }
+.doc-tree-row:has(.doc-tree-star) .doc-tree-tools { position:static; flex:none; padding-left:0; }
+.doc-tree-star { flex:0 0 25px; display:grid; place-items:center; margin-right:3px; color:#a96109; }
+.dark .doc-tree-star { color:#f4bc56; }
 .doc-icon { display:grid; place-items:center; width:16px; height:18px; flex:0 0 16px; margin:0 7px 0 1px; color:#858c99; font-size:14px; line-height:1; }
 .doc-tree-row.is-active .doc-icon { color:inherit; }
 .dark .doc-icon { color:#a3a6ae; }
