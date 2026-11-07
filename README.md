@@ -6,6 +6,16 @@
 
 完整迭代记录见 [`CHANGELOG.md`](./CHANGELOG.md)。
 
+## 界面预览
+
+### 知识空间首页
+
+![知屿文档首页，包含知识库入口、知识工具和最近编辑](./docs/screenshots/knowledge-home.png)
+
+### 文档编辑页
+
+![知屿文档编辑页，左侧为文档目录，中间为正文，右侧为大纲](./docs/screenshots/document-editor.png)
+
 ## 已实现
 
 - 首页索引与最近编辑，知识库和四个知识工具各有独立页面
