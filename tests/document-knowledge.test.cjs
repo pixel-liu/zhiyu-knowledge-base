@@ -23,9 +23,13 @@ function harness(t) {
   const timers = new Map();
   let timerId = 0;
   const { useDocumentKnowledge } = load("hooks/use-document-knowledge.ts", {
-    AbortController,
+    AbortController, Error,
     window: { setTimeout: (fn) => { timers.set(++timerId, fn); return timerId; }, clearTimeout: (id) => timers.delete(id) },
-    fetch: (url, options = {}) => new Promise((resolve) => requests.push({ url, options, resolve: (body, ok = true) => resolve({ ok, json: async () => body }) })),
+    fetch: (url, options = {}) => new Promise((resolve) => requests.push({
+      url, options,
+      resolve: (body, ok = true) => resolve({ ok, json: async () => body }),
+      respond: resolve,
+    })),
     require: (name, fallback) => name === "react" ? react : fallback(name),
   });
   t.after(() => slots.forEach((slot) => slot?.cleanup?.()));
@@ -42,6 +46,29 @@ function harness(t) {
   };
 }
 const plan = { documentId: "a", version: 1, reviewCount: 0, status: "learning" };
+
+test("an HTML response while reading review status can be retried without changing the plan", async (t) => {
+  const h = harness(t);
+  h.render();
+  h.requests[0].respond(new Response("<!DOCTYPE html><title>Not found</title>", {
+    status: 404, headers: { "Content-Type": "text/html" },
+  }));
+  await h.settle();
+  let hook = h.render();
+  assert.equal(hook.reviewError, "复习状态加载失败，请重试。");
+  assert.equal(hook.failedReviewStatus, undefined);
+
+  hook.refresh();
+  h.render();
+  assert.equal(h.requests.length, 2);
+  assert.equal(h.requests[1].url, h.requests[0].url);
+  assert.equal(h.requests[1].options.method, undefined);
+  h.requests[1].resolve(plan);
+  await h.settle();
+  hook = h.render();
+  assert.equal(hook.reviewError, undefined);
+  assert.equal(hook.review, plan);
+});
 
 test("review loads during editor saving, and link failures do not prevent enrollment", async (t) => {
   const h = harness(t);

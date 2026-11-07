@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DocumentConnections, ReviewPlan, StudyStatus } from "@/lib/knowledge-types";
+import { readApiJson } from "@/lib/read-api-json";
 
 export type DocumentKnowledge = { connections: DocumentConnections; review: ReviewPlan | null };
 export function useDocumentKnowledge(id: string | undefined, savedAt: string | undefined, saveStatus: string) {
@@ -25,9 +26,8 @@ export function useDocumentKnowledge(id: string | undefined, savedAt: string | u
       const response = await fetch(`/api/documents/${encodeURIComponent(id)}/review`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }),
       });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result?.message || "更新复习计划失败。");
-      setReviews((current) => ({ ...current, [id]: { review: result as ReviewPlan | null } }));
+      const review = await readApiJson<ReviewPlan | null>(response, "更新复习计划失败，请重试。");
+      setReviews((current) => ({ ...current, [id]: { review } }));
       setReviewUpdate({ id, busy: false });
       refresh();
       return true;
@@ -42,8 +42,7 @@ export function useDocumentKnowledge(id: string | undefined, savedAt: string | u
     const controller = new AbortController();
     const epoch = reviewEpochs.current.get(id) ?? 0;
     void fetch(`/api/documents/${encodeURIComponent(id)}/review`, { signal: controller.signal, cache: "no-store" }).then(async (response) => {
-      const review = await response.json();
-      if (!response.ok) throw new Error(review?.message || "复习状态加载失败。");
+      const review = await readApiJson<ReviewPlan | null>(response, "复习状态加载失败，请重试。");
       if (!controller.signal.aborted && epoch === (reviewEpochs.current.get(id) ?? 0)) {
         setReviews((current) => ({ ...current, [id]: { review } }));
       }
@@ -59,8 +58,7 @@ export function useDocumentKnowledge(id: string | undefined, savedAt: string | u
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       void fetch(`/api/documents/${encodeURIComponent(id)}/knowledge`, { signal: controller.signal }).then(async (response) => {
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.message || "关联信息加载失败。");
+        const data = await readApiJson<DocumentKnowledge>(response, "关联信息加载失败，请重试。");
         if (!controller.signal.aborted) setState({ id, data });
       }).catch((error: unknown) => {
         if (!controller.signal.aborted) setState({ id, error: error instanceof Error ? error.message : "关联信息加载失败。" });

@@ -4,13 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { studyStatusLabels, type ReviewGrade, type ReviewItem, type ReviewOverview } from "@/lib/knowledge-types";
 import type { DocumentRecord } from "@/lib/document-types";
+import { readApiJson } from "@/lib/read-api-json";
 import "./review-center.css";
-
-async function json<T>(response: Response): Promise<T> {
-  const body = await response.json();
-  if (!response.ok) throw new Error(body.message || "操作失败，请重试。");
-  return body;
-}
 
 // Render only text from saved blocks. Review mode never runs raw HTML or leaks the answer before reveal.
 function ReviewAnswer({ content }: { content: string }) {
@@ -45,7 +40,7 @@ function ReviewSession({ item, onBack, onGraded, onOpen }: { item: ReviewItem; o
     sending.current = true; setBusy(true); setError("");
     const request = new AbortController(); controller.current = request;
     try {
-      const document = await json<DocumentRecord>(await fetch(`/api/documents/${encodeURIComponent(item.id)}`, { signal: request.signal }));
+      const document = await readApiJson<DocumentRecord>(await fetch(`/api/documents/${encodeURIComponent(item.id)}`, { signal: request.signal }), "正文加载失败，请重试。");
       if (!request.signal.aborted) { setAnswer(document); setRevealed(true); }
     } catch (cause) { if (!request.signal.aborted) setError(cause instanceof Error ? cause.message : "正文加载失败。"); }
     finally { if (!request.signal.aborted) { setBusy(false); sending.current = false; } }
@@ -54,9 +49,9 @@ function ReviewSession({ item, onBack, onGraded, onOpen }: { item: ReviewItem; o
     if (sending.current || !revealed) return;
     sending.current = true; setBusy(true); setError("");
     try {
-      await json(await fetch(`/api/documents/${encodeURIComponent(item.id)}/review`, {
+      await readApiJson(await fetch(`/api/documents/${encodeURIComponent(item.id)}/review`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ grade: value, version: item.review.version }),
-      }));
+      }), "保存复习结果失败，请重试。");
       onGraded();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "保存复习结果失败。"); setBusy(false); sending.current = false; }
   }
@@ -83,7 +78,7 @@ export function ReviewCenter({ revision, onSelect, onChanged, beforeOpen }: { re
   const reload = useCallback(async (signal?: AbortSignal) => {
     const version = ++requestVersion.current;
     try {
-      const result = await json<ReviewOverview>(await fetch("/api/reviews", { signal, cache: "no-store" }));
+      const result = await readApiJson<ReviewOverview>(await fetch("/api/reviews", { signal, cache: "no-store" }), "复习清单加载失败，请重试。");
       if (!signal?.aborted && version === requestVersion.current) {
         setOverview(result); setClock(Date.now()); setError("");
         setSelected((current) => new Set([...current].filter((id) => result.items.some((item) => item.id === id))));
@@ -114,9 +109,9 @@ export function ReviewCenter({ revision, onSelect, onChanged, beforeOpen }: { re
     deletingRef.current = true; setDeleting(true); setDeleteError(""); setNotice("");
     ++requestVersion.current;
     try {
-      const result = await json<{ deletedIds: string[]; overview: ReviewOverview }>(await fetch("/api/reviews", {
+      const result = await readApiJson<{ deletedIds: string[]; overview: ReviewOverview }>(await fetch("/api/reviews", {
         method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ documentIds: ids }),
-      }));
+      }), "删除复习计划失败，请重试。");
       ++requestVersion.current;
       setOverview(result.overview); setClock(Date.now()); setError(""); setSelected(new Set());
       setNotice(`已删除 ${result.deletedIds.length} 个复习计划，可在文档标题右侧重新加入复习。`);
