@@ -108,6 +108,10 @@ body {
   font-family: var(--font-notion);
 }
 
+.doc-editor .bn-editor:focus {
+  outline: none;
+}
+
 .bn-editor .bn-block-outer {
   line-height: 1.7;
 }
