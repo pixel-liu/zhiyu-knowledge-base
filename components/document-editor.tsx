@@ -14,7 +14,7 @@ import { SideMenuExtension } from "@blocknote/core/extensions";
 import type { DefaultReactSuggestionItem, SuggestionMenuProps } from "@blocknote/react";
 import { useTheme } from "@/components/providers/theme-provider";
 import { uploadFile } from "@/lib/upload";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 import type { DocumentSummary } from "@/lib/document-types";
 import { documentHref, linkedDocumentId, linkifyInlineContent, type LinkReference } from "@/lib/document-links";
 import { useStableCallback } from "@/hooks/use-stable-callback";
@@ -55,7 +55,6 @@ type DocumentEditorProps = {
   editable?: boolean;
   documents: DocumentSummary[];
   bindings?: LinkReference[];
-  onSelect: (id: string) => void;
 };
 
 function normalizeEscapedCodeFences(markdown: string) {
@@ -365,7 +364,7 @@ function WikiSuggestionMenu({ items, selectedIndex, onItemClick, loadingState }:
   return <div className="doc-wiki-menu" role="listbox" aria-label="引用文档"><p>选择要引用的文档</p>{items.map((item, index) => <button key={index} type="button" role="option" aria-selected={selectedIndex === index} className={selectedIndex === index ? "is-selected" : ""} onMouseDown={(event) => event.preventDefault()} onClick={() => onItemClick?.(item)}><span>{item.icon}</span><span><b>{item.title}</b><small>{item.subtext}</small></span></button>)}{!items.length && <p>{loadingState === "loading" ? "正在查找…" : "没有匹配的文档，可保留 [[文档名]] 稍后关联。"}</p>}</div>;
 }
 
-export const DocumentEditor = memo(function DocumentEditor({ content, onChange, editable = true, documents, bindings = [], onSelect }: DocumentEditorProps) {
+export const DocumentEditor = memo(function DocumentEditor({ content, onChange, editable = true, documents, bindings = [] }: DocumentEditorProps) {
   const { resolvedTheme } = useTheme();
   const [initial] = useState(() => readBlocks(content));
   const migrationApplied = useRef(false);
@@ -375,6 +374,8 @@ export const DocumentEditor = memo(function DocumentEditor({ content, onChange, 
     initialContent: initial.blocks as PartialBlock<typeof documentEditorSchema.blockSchema>[],
     dictionary: zh,
     uploadFile,
+    // Handle navigation on click, after ProseMirror's mouseup handler.
+    links: { onClick: () => false },
     pasteHandler: ({ event, editor: currentEditor, defaultPasteHandler }) => {
       const plainText = event.clipboardData?.getData("text/plain") || "";
       const normalizedText = normalizeEscapedCodeFences(plainText);
@@ -466,15 +467,28 @@ export const DocumentEditor = memo(function DocumentEditor({ content, onChange, 
     };
   }, [editor]);
 
+  const openLink = (event: MouseEvent<HTMLDivElement>) => {
+    if (event.button !== 0 && event.button !== 1) return;
+    const anchor = (event.target as Element).closest<HTMLAnchorElement>("a[href]");
+    if (!anchor) return;
+    const id = linkedDocumentId(anchor.getAttribute("href") || "");
+    // Editable links need explicit activation because the browser treats them as text.
+    if (!id && (!editable || event.button !== 0 || anchor.dataset.inlineContentType !== "link")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (id && !documents.some((document) => document.id === id)) {
+      setLinkError("这篇文档已删除或不可用。");
+      return;
+    }
+    if (id) {
+      setLinkError("");
+      flushChange();
+    }
+    window.open(anchor.href, "_blank", "noopener,noreferrer");
+  };
+
   return (
-    <div className="doc-editor-linked" onClickCapture={(event) => {
-      const anchor = (event.target as HTMLElement).closest<HTMLAnchorElement>("a[href]");
-      const id = anchor ? linkedDocumentId(anchor.getAttribute("href") || "") : null;
-      if (!id || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
-      event.preventDefault(); event.stopPropagation(); flushChange();
-      if (documents.some((document) => document.id === id)) { setLinkError(""); onSelect(id); }
-      else setLinkError("这篇文档已删除或不可用。");
-    }}>{linkError && <p className="doc-knowledge-error" role="alert">{linkError}</p>}<BlockNoteView
+    <div className="doc-editor-linked" onClickCapture={openLink} onAuxClickCapture={openLink}>{linkError && <p className="doc-knowledge-error" role="alert">{linkError}</p>}<BlockNoteView
       editor={editor}
       editable={editable}
       theme={resolvedTheme}
